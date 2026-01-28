@@ -10,8 +10,6 @@ import time
 # ==========================================
 # CONFIGURACIÓN DE TIEMPO (AJUSTE MANUAL SEGURO)
 # ==========================================
-# Si el reloj marca una hora incorrecta, ajusta este número.
-# Ejemplo: Si son las 10:00 y marca las 16:00, pon -6.
 OFFSET_HORAS = -0
 
 DB_PATH = '/app/data_folder/cola_mensajes.db'
@@ -22,6 +20,12 @@ LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
 
 pd.set_option("styler.render.max_elements", 1000000)
 st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
+
+# --- MEJORA: LÓGICA DE BIENVENIDA SE-MAMO_GEMINI ---
+if "welcome_shown" not in st.session_state:
+    st.toast("🚀 Sistema se-mamo_gemini: ONLINE", icon="🤖")
+    st.balloons()
+    st.session_state.welcome_shown = True
 
 if "last_refresh" not in st.session_state:
     st.session_state.last_refresh = time.time()
@@ -42,7 +46,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Hora local calculada manualmente (Más robusto si el servidor tiene hora UTC)
+# --- MEJORA: BANNER DE ESTADO PROYECTO ---
+st.success(f"🛠️ **PROYECTO: RADAR** | Almacenamiento: **900GB** | Estado: **Sincronizado**")
+
+# Hora local calculada manualmente
 hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
 
 # --- HEADER ---
