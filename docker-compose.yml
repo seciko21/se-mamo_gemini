@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. EL MONITOR
+  radar-monitor:
+    build: ./radar_proyecto
+    container_name: radar_monitor
+    network_mode: "host" # Mantenemos host para que escuche el tráfico de red
+    restart: always
+    volumes:
+      - /mnt/darat:/mnt/darat
+    command: python3 app/monitor_radar.py
+
+  # 2. EL BOT
+  radar-bot:
+    build: ./radar_proyecto
+    container_name: radar_bot
+    network_mode: "host"
+    restart: always
+    environment:
+      - URL_PUBLICO=https://radar.radar-lcc.site
+    volumes:
+      - /mnt/darat:/mnt/darat
+    command: python3 app/bot_comando.py
+
+  # 3. EL TÚNEL (Cloudflare)
+  radar-tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: radar_tunel_fijo
+    network_mode: "host"
+    restart: always
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMDk0YmJhYzIzMTBjNTRhMWJhNjcwN2ZlYjNkNjM2MzAiLCJ0IjoiNTk4NDcxMGEtOGUxYS00ZWE4LTg4MjAtNDk5NTIwMGQ3ZjFlIiwicyI6Ik56TTJaV1F5TmpVdE5Ea3pNaTAwTWpRd0xXRm1ORGN0TkdGaE5USTJOelU0Tm1ZMCJ9
+    # Forzamos a que busque en IPv4 (127.0.0.1) para evitar el error [::1]
+    command: tunnel --no-autoupdate run --url http://127.0.0.1:8085
+
+  # 4. EL DASHBOARD (Quitamos host mode para que el mapeo de puertos FUNCIONE)
+  radar-dashboard:
+    build: ./radar_web
+    container_name: radar_dashboard
+    restart: always
+    ports:
+      - "8085:8501" # Ahora sí: el host verá el 8085 y lo mandará al 8501 del contenedor
+    volumes:
+      - /mnt/darat/data:/app/data_folder
+      - /mnt/darat/clips:/app/clips:ro
+      - /mnt/darat/multas_fotos:/app/imagenes_multas
