@@ -1,0 +1,6 @@
+/mnt/darat/clips/*
+/mnt/darat/multas_fotos/*
+/mnt/darat/data/*.db
+**/__pycache__/
+*.log
+.env
