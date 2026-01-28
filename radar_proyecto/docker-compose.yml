@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # 1. EL MONITOR (Captura y guarda fotos/datos)
+  radar-monitor:
+    build: .
+    container_name: radar_monitor
+    network_mode: "host"
+    restart: always
+    volumes:
+      # MAPEADO UNIFICADO: El contenedor ve exactamente lo mismo que el host.
+      # Esto asegura que /mnt/darat/data/cola_mensajes.db sea la misma para todos.
+      - /mnt/darat:/mnt/darat
+      # Mantenemos este solo por si hay scripts muy viejos grabados en el código
+      - /mnt/darat:/mnt/md0/radar
+    command: python app/monitor_radar.py
+
+  # 2. EL BOT (Envía alertas y comandos)
+  radar-bot:
+    build: .
+    container_name: radar_bot
+    network_mode: "host"
+    restart: always
+    environment:
+      - URL_PUBLICO=https://radar.radar-lcc.site
+    volumes:
+      - /mnt/darat:/mnt/darat
+      - /mnt/darat:/mnt/md0/radar
+    command: python app/bot_comando.py
+
+  # 3. EL TÚNEL (Acceso externo seguro vía Cloudflare)
+  radar-tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: radar_tunel_fijo
+    network_mode: "host"
+    restart: always
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMDk0YmJhYzIzMTBjNTRhMWJhNjcwN2ZlYjNkNjM2MzAiLCJ0IjoiNTk4NDcxMGEtOGUxYS00ZWE4LTg4MjAtNDk5NTIwMGQ3ZjFlIiwicyI6Ik56TTJaV1F5TmpVdE5Ea3pNaTAwTWpRd0xXRm1ORGN0TkdGaE5USTJOelU0Tm1ZMCJ9
+    command: tunnel --no-autoupdate run

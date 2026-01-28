@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  radar_dashboard:
+    build: .
+    container_name: radar_dashboard
+    ports:
+      - "8085:8501"
+    environment:
+      - TZ=America/Mexico_City
+    volumes:
+      # Conectamos a la base de datos en el disco de 900GB
+      - /mnt/darat/data:/app/data_folder
+      
+      # Conectamos a los clips de video (solo lectura)
+      - /mnt/darat/clips:/app/clips:ro
+      
+      # Configuración de la interfaz
+      - ./.streamlit:/app/.streamlit:ro
+      
+      # Carpeta de las páginas (donde vive Infracciones_Graves.py)
+      - ./pages:/app/pages
+      
+      # --- CORRECCIÓN DE RUTA DE FOTOS ---
+      # Conectamos la carpeta física de 900GB a la carpeta interna que lee Streamlit
+      - /mnt/darat/multas_fotos:/app/imagenes_multas
+    restart: always

@@ -1,0 +1,14 @@
+# Ignorar SOLO el archivo de configuración sensible
+**/config.py
+
+# Bases de Datos y Logs (Rutas relativas)
+*.db
+*.log
+*.jpg
+
+# Evidencia de Video
+clips/
+
+# Python
+__pycache__/
+*.pyc
