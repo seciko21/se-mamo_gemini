@@ -1,0 +1,2238 @@
+🚀 AUDITORÍA INTEGRAL: PROYECTO SE-MAMO_GEMINI
+📅 Fecha: 28/01/2026 08:40:31
+📂 Ruta Auditada: /root/se-mamo_gemini
+==================================================
+
+
+################################################################################
+📄 ARCHIVO: .gitignore
+################################################################################
+
+/mnt/darat/clips/*
+/mnt/darat/multas_fotos/*
+/mnt/darat/data/*.db
+**/__pycache__/
+*.log
+.env
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: docker-compose.yml
+################################################################################
+
+version: '3.8'
+
+services:
+  # 1. EL MONITOR
+  radar-monitor:
+    build: ./radar_proyecto
+    container_name: radar_monitor
+    network_mode: "host" # Mantenemos host para que escuche el tráfico de red
+    restart: always
+    volumes:
+      - /mnt/darat:/mnt/darat
+    command: python3 app/monitor_radar.py
+
+  # 2. EL BOT
+  radar-bot:
+    build: ./radar_proyecto
+    container_name: radar_bot
+    network_mode: "host"
+    restart: always
+    environment:
+      - URL_PUBLICO=https://radar.radar-lcc.site
+    volumes:
+      - /mnt/darat:/mnt/darat
+    command: python3 app/bot_comando.py
+
+  # 3. EL TÚNEL (Cloudflare)
+  radar-tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: radar_tunel_fijo
+    network_mode: "host"
+    restart: always
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMDk0YmJhYzIzMTBjNTRhMWJhNjcwN2ZlYjNkNjM2MzAiLCJ0IjoiNTk4NDcxMGEtOGUxYS00ZWE4LTg4MjAtNDk5NTIwMGQ3ZjFlIiwicyI6Ik56TTJaV1F5TmpVdE5Ea3pNaTAwTWpRd0xXRm1ORGN0TkdGaE5USTJOelU0Tm1ZMCJ9
+    # Forzamos a que busque en IPv4 (127.0.0.1) para evitar el error [::1]
+    command: tunnel --no-autoupdate run --url http://127.0.0.1:8085
+
+  # 4. EL DASHBOARD (Quitamos host mode para que el mapeo de puertos FUNCIONE)
+  radar-dashboard:
+    build: ./radar_web
+    container_name: radar_dashboard
+    restart: always
+    ports:
+      - "8085:8501" # Ahora sí: el host verá el 8085 y lo mandará al 8501 del contenedor
+    volumes:
+      - /mnt/darat/data:/app/data_folder
+      - /mnt/darat/clips:/app/clips:ro
+      - /mnt/darat/multas_fotos:/app/imagenes_multas
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: auditoria_se_mamo_gemini_20260128.txt
+################################################################################
+
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/requirements.txt
+################################################################################
+
+requests
+urllib3
+pandas
+matplotlib
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/test_ia.py
+################################################################################
+
+import easyocr
+import cv2
+import os
+
+# Ruta INTERNA del contenedor (donde Docker ve las fotos)
+FOTOS_PATH = "/mnt/md0/radar/multas_fotos/"
+
+print("🔍 Buscando imágenes en:", FOTOS_PATH)
+
+if not os.path.exists(FOTOS_PATH):
+    print(f"❌ ERROR: La carpeta {FOTOS_PATH} no existe dentro del contenedor.")
+    exit()
+
+archivos = [f for f in os.listdir(FOTOS_PATH) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+if not archivos:
+    print("❌ ERROR: No hay fotos en la carpeta para probar.")
+    exit()
+
+foto_test = 'prueba_ia.jpg'
+ruta_completa = os.path.join(FOTOS_PATH, foto_test)
+
+print(f"📸 Probando con: {foto_test}")
+
+# Inicializar IA
+reader = easyocr.Reader(['es'], gpu=False)
+
+# Leer imagen usando la ruta directamente (más seguro para EasyOCR)
+try:
+    results = reader.readtext(ruta_completa)
+    print("-" * 30)
+    if not results:
+        print("Empty: No se detectó texto (esto es normal si la foto es oscura o borrosa).")
+    else:
+        for (bbox, text, prob) in results:
+            print(f"✅ DETECTADO: {text.upper()} (Confianza: {prob:.2f})")
+    print("-" * 30)
+except Exception as e:
+    print(f"❌ ERROR CRÍTICO: {e}")
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/Dockerfile
+################################################################################
+
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV TZ=America/Mexico_City
+
+# 1. Dependencias mínimas de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg curl sqlite3 libgl1 libglib2.0-0 tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 2. INSTALACIÓN POR PASOS (Para no saturar el disco)
+RUN pip install --no-cache-dir --upgrade pip
+
+# PASO CRÍTICO: Instalar TORCH CPU primero solo. 
+# Esto evita que easyocr intente bajar la versión de 5GB de NVIDIA.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# PASO 2: Instalar el resto de librerías
+RUN pip install --no-cache-dir \
+    requests urllib3 pandas opencv-python-headless easyocr
+
+# 3. PRE-DESCARGA DEL MODELO (Solo si el disco lo permite)
+RUN python3 -c "import easyocr; reader = easyocr.Reader(['es'], gpu=False)"
+
+COPY . .
+
+CMD ["python3"]
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/actualizar_url.sh
+################################################################################
+
+#!/bin/bash
+
+# Configuración de rutas
+PROYECTO_DIR="/root/radar_proyecto"
+DOCKER_COMPOSE="/usr/local/bin/docker-compose"
+
+# 1. Extraer la URL más reciente de los logs del túnel
+NUEVA_URL=$(docker logs radar_tunel 2>&1 | grep -oE "https://[a-zA-Z0-9.-]+\.lhr\.life" | tail -n 1)
+
+if [ -z "$NUEVA_URL" ]; then
+    echo "$(date): Error - No se detectó URL en radar_tunel."
+    exit 1
+fi
+
+# 2. Obtener la URL que tiene el bot actualmente
+URL_ACTUAL=$(docker inspect radar_bot --format='{{range .Config.Env}}{{println .}}{{end}}' | grep URL_PUBLICO | cut -d'=' -f2)
+
+# 3. Comparar y actuar
+if [ "$NUEVA_URL" != "$URL_ACTUAL" ]; then
+    echo "$(date): URL distinta detectada. Actualizando a: $NUEVA_URL"
+    # Ejecutamos el comando usando la ruta absoluta y el archivo yml específico
+    export URL_PUBLICO=$NUEVA_URL
+    $DOCKER_COMPOSE -f $PROYECTO_DIR/docker-compose.yml up -d radar-bot
+else
+    echo "$(date): La URL no ha cambiado. Todo en orden."
+fi
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/docker-compose.yml
+################################################################################
+
+version: '3.8'
+
+services:
+  # 1. EL MONITOR (Captura y guarda fotos/datos)
+  radar-monitor:
+    build: .
+    container_name: radar_monitor
+    network_mode: "host"
+    restart: always
+    volumes:
+      # MAPEADO UNIFICADO: El contenedor ve exactamente lo mismo que el host.
+      # Esto asegura que /mnt/darat/data/cola_mensajes.db sea la misma para todos.
+      - /mnt/darat:/mnt/darat
+      # Mantenemos este solo por si hay scripts muy viejos grabados en el código
+      - /mnt/darat:/mnt/md0/radar
+    command: python app/monitor_radar.py
+
+  # 2. EL BOT (Envía alertas y comandos)
+  radar-bot:
+    build: .
+    container_name: radar_bot
+    network_mode: "host"
+    restart: always
+    environment:
+      - URL_PUBLICO=https://radar.radar-lcc.site
+    volumes:
+      - /mnt/darat:/mnt/darat
+      - /mnt/darat:/mnt/md0/radar
+    command: python app/bot_comando.py
+
+  # 3. EL TÚNEL (Acceso externo seguro vía Cloudflare)
+  radar-tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: radar_tunel_fijo
+    network_mode: "host"
+    restart: always
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMDk0YmJhYzIzMTBjNTRhMWJhNjcwN2ZlYjNkNjM2MzAiLCJ0IjoiNTk4NDcxMGEtOGUxYS00ZWE4LTg4MjAtNDk5NTIwMGQ3ZjFlIiwicyI6Ik56TTJaV1F5TmpVdE5Ea3pNaTAwTWpRd0xXRm1ORGN0TkdGaE5USTJOelU0Tm1ZMCJ9
+    command: tunnel --no-autoupdate run
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/.gitignore
+################################################################################
+
+# Ignorar SOLO el archivo de configuración sensible
+**/config.py
+
+# Bases de Datos y Logs (Rutas relativas)
+*.db
+*.log
+*.jpg
+
+# Evidencia de Video
+clips/
+
+# Python
+__pycache__/
+*.pyc
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/README.md
+################################################################################
+
+# 🏎️ Radar Proyecto V2.0 - Sistema Profesional
+
+Sistema automatizado de monitoreo de infracciones con almacenamiento masivo (900GB), reporte vía Telegram y Dashboard analítico.
+
+## 🚀 Arquitectura del Sistema
+El proyecto está dividido en servicios independientes gestionados por Docker:
+1. **Monitor**: Captura datos y gestiona el almacenamiento en `/mnt/darat`.
+2. **Bot (@Rocket_lcc_bot)**: Interfaz de comandos en Telegram y alertas al grupo **LCC-RADAR**.
+3. **Dashboard**: Interfaz web en Streamlit para visualización de métricas y videos.
+4. **Túnel Cloudflare**: Conexión segura y dominio fijo en `https://radar.radar-lcc.site`.
+
+## 📦 Requisitos de Almacenamiento
+* **Ruta de Datos**: `/mnt/darat` (Disco de 900GB).
+* **Limpieza Automática**: Configurada vía Crontab para eliminar clips mayores a 30 días.
+
+## 🛠️ Instalación y Despliegue
+Para levantar el sistema completo:
+```bash
+cd /root/radar_proyecto
+docker-compose up -d
+```
+
+## 📊 Dashboard y Red
+* **URL Local**: http://localhost:8085
+* **URL Pública**: https://radar.radar-lcc.site
+* **Puerto Interno**: 8501 (Mapeado al 8085)
+
+## 📝 Mantenimiento (Crontab)
+El sistema cuenta con dos tareas críticas:
+1. Limpieza de disco a las 00:00 hrs.
+2. Actualización de IP DuckDNS cada 5 minutos.
+
+---
+**Versión Tag:** v2.0.0-estable
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/tunel_proxy/Dockerfile
+################################################################################
+
+FROM alpine:latest
+
+# Instalar cliente SSH
+RUN apk add --no-network --no-cache openssh-client
+
+# Copiar tus llaves SSH (las que acabamos de arreglar) al contenedor
+RUN mkdir -p /root/.ssh
+COPY /root/.ssh/id_rsa /root/.ssh/id_rsa
+
+# Ajustar permisos estrictos para SSH
+RUN chmod 700 /root/.ssh && chmod 600 /root/.ssh/id_rsa
+
+# Comando para iniciar el túnel con reconexión automática
+# -o ExitOnForwardFailure=yes permite que el contenedor falle si el túnel cae, 
+# para que Docker lo reinicie.
+ENTRYPOINT ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30", "-o", "ExitOnForwardFailure=yes", "-R", "80:radar_dashboard:8501", "localhost.run"]
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/app/config.py
+################################################################################
+
+import os
+
+# --- CREDENCIALES DE TELEGRAM ---
+TOKEN = "8405710013:AAHzR8Owxqm13yrTpOjxEVZWzbhOit8I44g"
+ADMIN_ID = 6578515759
+GRUPO_ID = -1003462591372
+
+# CHAT_ID se establece al GRUPO_ID para que todas las alertas lleguen al grupo
+CHAT_ID = GRUPO_ID 
+
+# Lista de IDs permitidos para interactuar con los botones del bot
+USUARIOS_AUTORIZADOS = [ADMIN_ID, 8562713719, GRUPO_ID]
+
+# --- CREDENCIALES CÁMARAS AXIS ---
+USER, PASS = 'root', 'mfmssmcl'
+
+# --- RUTAS DE SISTEMA (UNIFICADO PARA DISCO 900GB /mnt/darat) ---
+# Se actualiza BASE_DIR para que apunte al disco físico real
+BASE_DIR = "/mnt/darat"
+
+# La base de datos ahora reside en la subcarpeta 'data' del disco de 900GB
+DB_FILE = f"{BASE_DIR}/data/cola_mensajes.db"
+
+# Rutas de almacenamiento corregidas para clips y logs
+VIDEO_PATH = "/mnt/darat/clips/"
+LOG_FILE = f"{VIDEO_PATH}velocidades.log"
+HEARTBEAT_FILE = f"{BASE_DIR}/data/heartbeat.txt"
+
+# --- CONFIGURACIÓN DE RADARES ---
+RADARES = {
+    "BAHIAS": {"ip": "192.168.4.152", "puerto": 3000},
+    "FINESTRE": {"ip": "192.168.4.36", "puerto": 3000},
+    "ROMANZA": {"ip": "192.168.4.99", "puerto": 3000}
+}
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/app/bot_comando.py
+################################################################################
+
+import requests, time, os, urllib3, threading, subprocess, socket, sqlite3, json
+from requests.auth import HTTPDigestAuth
+from datetime import datetime
+from config import *
+
+# ==========================================
+# CORRECCIÓN DE ZONA HORARIA (CRÍTICO PARA REPORTES)
+# ==========================================
+os.environ['TZ'] = 'America/Mexico_City'
+try:
+    time.tzset()
+    print(f"✅ [RELOJ] Bot sincronizado: {datetime.now()}")
+except:
+    pass
+# ==========================================
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- CONFIGURACIÓN DE ENLACE ACTUALIZADA (TAILSCALE + PUERTO 8085) ---
+URL_DASHBOARD = os.getenv("URL_PUBLICO", "http://localhost:8501")
+# Ruta de la DB basada en tu configuración de 900GB (/mnt/darat)
+DB_PATH_REAL = "/mnt/darat/data/cola_mensajes.db"
+# Aseguramos que VIDEO_PATH y FOTOS_PATH apunten al disco de 900GB
+VIDEO_PATH = "/mnt/darat/clips/"
+FOTOS_PATH = "/mnt/darat/multas_fotos/"
+
+# --- FUNCIÓN PARA CONSTRUIR EL ESTADO LLAMATIVO ---
+
+def obtener_mensaje_estado(ip_servidor):
+    """Construye la tarjeta visual con barra de progreso y estadísticas del disco corregido a 900GB."""
+    try:
+        st = os.statvfs('/mnt/darat/')
+        libre = (st.f_bavail * st.f_frsize) / (1024**3)
+        total_disk = (st.f_blocks * st.f_frsize) / (1024**3)
+        porcentaje_usado = ((total_disk - libre) / total_disk) * 100
+        
+        # Conteo de archivos en el disco de 900GB
+        clips = [f for f in os.listdir(VIDEO_PATH) if f.endswith('.mp4')]
+        fotos = [f for f in os.listdir(FOTOS_PATH) if f.endswith('.jpg')]
+        
+        bloques = 10
+        llenos = int(porcentaje_usado / bloques)
+        barra = "▰" * llenos + "▱" * (bloques - llenos)
+
+        return (
+            "💓 <b>ESTADO DEL RADAR (HEARTBEAT)</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"🖥 <b>SERVIDOR:</b> <code>{ip_servidor}</code>\n"
+            f"💾 <b>DISCO ALMACENAMIENTO (900GB):</b>\n"
+            f"<code>{barra}</code> {porcentaje_usado:.1f}%\n"
+            f"├ Disponible: <b>{libre:.2f} GB</b>\n"
+            f"├ Clips en memoria: <b>{len(clips)}</b>\n"
+            f"└ Fotos capturadas: <b>{len(fotos)}</b>\n\n"
+            "✅ <b>ESTADO:</b> Sincronizado v3.7 (Tailscale)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"🕒 <b>ACTUALIZADO:</b> {datetime.now().strftime('%H:%M:%S')}"
+        )
+    except Exception as e:
+        return f"❌ Error al obtener estado: {e}"
+
+# --- PANEL DE SALUD ACTUALIZADO ---
+
+def verificar_salud_red():
+    reporte = "🌐 <b>PANEL DE SALUD DE RADARES</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+    for nombre, datos in RADARES.items():
+        ip = datos['ip']
+        puerto = datos['puerto']
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2)
+            result = s.connect_ex((ip, puerto))
+            s.close()
+            estado = "🟢 <b>ONLINE</b>" if result == 0 else "🔴 <b>OFFLINE</b>"
+        except:
+            estado = "🔴 <b>ERROR</b>"
+        
+        reporte += f"📡 <b>{nombre}:</b> {estado}\n  <code>{ip}:{puerto}</code>\n\n"
+    
+    reporte += f"🕒 <i>Check: {datetime.now().strftime('%H:%M:%S')}</i>"
+    return reporte
+
+# --- MOTORES DE SEGUIMIENTO ---
+
+def servicio_heartbeat():
+    print("💓 Motor Heartbeat iniciado.")
+    while True:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip_servidor = s.getsockname()[0]
+            s.close()
+            
+            msg_latido = obtener_mensaje_estado(ip_servidor)
+            markup = {"inline_keyboard": [[{"text": "🌐 IR AL PANEL WEB", "url": URL_DASHBOARD}]]}
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                          json={"chat_id": CHAT_ID, "text": msg_latido, "parse_mode": "HTML", "reply_markup": markup})
+            time.sleep(43200) # Cada 12 horas
+        except: time.sleep(60)
+
+def reporte_automatico_cierre():
+    print("⏰ Motor de Reporte Automático iniciado.")
+    enviado = False
+    while True:
+        try:
+            ahora = datetime.now()
+            if ahora.hour == 23 and ahora.minute == 59 and not enviado:
+                reporte = generar_reporte_diario()
+                msg = f"🤖 <b>CIERRE AUTOMÁTICO DEL DÍA</b>\n\n{reporte}"
+                markup = {"inline_keyboard": [[{"text": "📊 VER DASHBOARD", "url": URL_DASHBOARD}]]}
+                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                              json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML", "reply_markup": markup})
+                enviado = True
+                time.sleep(120)
+            if ahora.hour == 0: enviado = False
+            time.sleep(30)
+        except: time.sleep(30)
+
+# --- FUNCIONES DE APOYO CORREGIDAS PARA SQLITE ---
+
+def depurar_disco_viejo():
+    try:
+        archivos = [os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH) if f.endswith('.mp4')]
+        if not archivos: return "📁 Nada que limpiar."
+        archivos.sort(key=os.path.getmtime)
+        limite = max(1, len(archivos) // 3)
+        for i in range(limite): os.remove(archivos[i])
+        return f"✅ Depuración completa: {limite} videos eliminados en /mnt/darat/."
+    except Exception as e: return f"❌ Error: {e}"
+
+def generar_reporte_diario():
+    """Genera reporte consultando la DB SQLite para datos actualizados."""
+    try:
+        if not os.path.exists(DB_PATH_REAL): return "❌ No hay base de datos en /mnt/darat/."
+        hoy = datetime.now().strftime('%Y-%m-%d')
+        
+        conn = sqlite3.connect(DB_PATH_REAL)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                COUNT(*), 
+                SUM(CASE WHEN velocidad >= 60 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN velocidad >= 55 AND velocidad <= 59 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN velocidad < 55 THEN 1 ELSE 0 END),
+                AVG(velocidad)
+            FROM historial WHERE fecha = ?
+        """, (hoy,))
+        
+        total, graves, alertas, preventivos, promedio = cursor.fetchone()
+        conn.close()
+
+        if not total or total == 0: 
+            return f"📅 Sin detecciones hoy ({hoy})."
+
+        return (f"📊 <b>RESUMEN ({hoy})</b>\n\n"
+                f"✅ Total: {total}\n"
+                f"🚗 Prev: {preventivos or 0}\n"
+                f"⚠️ Alert: {alertas or 0}\n"
+                f"🚀 Grave: {graves or 0}\n"
+                f"📈 Prom: {(promedio or 0):.1f} km/h")
+    except Exception as e: return f"❌ Error Reporte DB: {e}"
+
+def leer_log_telegram():
+    """Obtiene los últimos 15 registros de la DB para evitar el lag de archivos de texto."""
+    try:
+        if not os.path.exists(DB_PATH_REAL): return "📝 <b>Sin registros en DB.</b>"
+        
+        conn = sqlite3.connect(DB_PATH_REAL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT fecha, hora, radar, velocidad FROM historial ORDER BY id DESC LIMIT 15")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows: return "📝 <b>No hay registros hoy.</b>"
+
+        mensaje = ""
+        for r in reversed(rows):
+            emoji = "🔴" if r[3] >= 60 else "🟡" if r[3] >= 55 else "✅"
+            mensaje += f"{emoji} [{r[1]}] {r[2]}: {r[3]}km/h\n"
+        
+        return f"📜 <b>ÚLTIMOS REGISTROS (DB):</b>\n\n<code>{mensaje}</code>"
+    except Exception as e: return f"❌ Error al leer DB: {e}"
+
+def obtener_ultimos_clips():
+    try:
+        archivos = [f for f in os.listdir(VIDEO_PATH) if f.endswith('.mp4')]
+        archivos.sort(key=lambda x: os.path.getmtime(os.path.join(VIDEO_PATH, x)), reverse=True)
+        top = archivos[:5]
+        lista = "📂 <b>ÚLTIMOS CLIPS (900GB):</b>\n\n"
+        for arc in top: lista += f"• <code>{arc}</code>\n"
+        return lista + "\n<i>💡 Escribe el nombre para descargar.</i>"
+    except: return "❌ Error clips."
+
+def obtener_manual_proyecto():
+    ahora = datetime.now().strftime('%d/%m/%Y')
+    return (
+        "🚀 <b>SISTEMA DE MONITOREO RADAR PRO v3.7</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🛰 <b>ESTADO DEL SISTEMA:</b> <code>OPERATIVO</code>\n"
+        "📅 <b>ÚLTIMA ACTUALIZACIÓN:</b> <code>" + ahora + "</code>\n\n"
+        "⚡ <b>CLASIFICACIÓN DE INFRACCIONES:</b>\n"
+        "• 🚗 <b>PREVENTIVO (≤ 54 km/h):</b> Registro y notificación.\n"
+        "• ⚠️ <b>ALERTA (55 - 59 km/h):</b> Foto instantánea.\n"
+        "• 🚀 <b>GRAVE (≥ 60 km/h):</b> Foto + 🎥 Video (15s).\n\n"
+        "🛠 <b>CAPACIDADES TÉCNICAS:</b>\n"
+        "• <b>Almacenamiento:</b> 900GB en /mnt/darat/.\n"
+        "• <b>Acceso Remoto:</b> Tailscale Activa.\n"
+        "• <b>Puerto Dashboard:</b> 8085.\n\n"
+        "👉 <a href='" + URL_DASHBOARD + "'>PANEL DE CONTROL RADAR</a>"
+    )
+
+def axis_snapshot(ip):
+    try:
+        r = requests.get(f"http://{ip}/axis-cgi/jpg/image.cgi", auth=HTTPDigestAuth(USER, PASS), timeout=10)
+        return r.content if r.status_code == 200 else None
+    except: return None
+
+def grabar_video_manual(ip):
+    ahora = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"{VIDEO_PATH}manual_{ahora}.mp4"
+    cmd = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp",
+           "-t", "15", "-c", "copy", "-y", filename]
+    subprocess.Popen(cmd)
+    def enviar():
+        time.sleep(17) 
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            with open(filename, 'rb') as v:
+                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendVideo",
+                              data={'chat_id': CHAT_ID, 'caption': f'🎥 Video Manual {ahora}'}, files={'video': v})
+    threading.Thread(target=enviar).start()
+
+# --- INTERFAZ ---
+
+TECLADO = {
+    "keyboard": [
+        [{"text": "📊 Reporte de Hoy"}, {"text": "📜 Ver Log de Velocidad"}],
+        [{"text": "📸 Forzar Captura de Prueba"}],
+        [{"text": "🎥 Forzar Video de Prueba (15s)"}],
+        [{"text": "💾 Estado del Disco"}, {"text": "📂 Ver últimos clips"}],
+        [{"text": "🧹 Depurar Disco (Borrar viejos)"}, {"text": "🌐 Salud de la Red"}],
+        [{"text": "📖 Manual y Proyecto"}]
+    ], "resize_keyboard": True
+}
+
+MENU_FOTOS = {"inline_keyboard": [[{"text": f"📍 {n}", "callback_data": f"foto_{n}"}] for n in RADARES.keys()]}
+
+def listen_bot():
+    last_id = 0
+    print("🤖 Bot de Comandos Activo.")
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+            res = requests.get(url, params={"offset": last_id + 1, "timeout": 20}).json()
+            for up in res.get("result", []):
+                last_id = up["update_id"]
+                
+                if "callback_query" in up:
+                    data = up["callback_query"]["data"]
+                    if data.startswith("foto_"):
+                        rk = data.split("_")[1]
+                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": f"📸 Capturando {rk}..."})
+                        foto = axis_snapshot(RADARES[rk]["ip"])
+                        if foto:
+                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
+                                          data={'chat_id': CHAT_ID, 'caption': f"✅ Prueba: {rk}"}, files={'photo': foto})
+                    continue
+
+                msg = up.get("message", {}); txt = msg.get("text", "")
+                if not txt: continue
+
+                if "/start" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "🎮 <b>RADAR PRO v3.7</b>", "reply_markup": TECLADO, "parse_mode": "HTML"})
+
+                elif "Reporte" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": generar_reporte_diario(), "parse_mode": "HTML"})
+
+                elif "Log" in txt or "📜" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": leer_log_telegram(), "parse_mode": "HTML"})
+
+                elif "Captura" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "📸 Elija radar para captura:", "reply_markup": MENU_FOTOS})
+
+                elif "Video" in txt:
+                    rk = list(RADARES.keys())[0] 
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": f"🎬 Grabando video en {rk}..."})
+                    grabar_video_manual(RADARES[rk]["ip"])
+
+                elif "clips" in txt.lower():
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": obtener_ultimos_clips(), "parse_mode": "HTML"})
+
+                elif "Manual" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": obtener_manual_proyecto(), "parse_mode": "HTML"})
+
+                elif "Disco" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": obtener_mensaje_estado("LocalHost"), "parse_mode": "HTML"})
+
+                elif "Salud" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": verificar_salud_red(), "parse_mode": "HTML"})
+
+                elif "Depurar" in txt:
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": depurar_disco_viejo()})
+
+                elif ".mp4" in txt.lower():
+                    ruta = os.path.join(VIDEO_PATH, txt.strip())
+                    if os.path.exists(ruta):
+                        with open(ruta, 'rb') as v: requests.post(f"https://api.telegram.org/bot{TOKEN}/sendVideo", data={'chat_id': CHAT_ID}, files={'video': v})
+        except: time.sleep(5)
+
+if __name__ == "__main__":
+    threading.Thread(target=servicio_heartbeat, daemon=True).start()
+    threading.Thread(target=reporte_automatico_cierre, daemon=True).start()
+    listen_bot()
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_proyecto/app/monitor_radar.py
+################################################################################
+
+import socket, time, requests, os, subprocess, threading, sqlite3, json, cv2
+import easyocr
+import numpy as np
+from requests.auth import HTTPDigestAuth
+from datetime import datetime
+from config import *
+
+# ==========================================
+# CORRECCIÓN DE HORA Y CONFIGURACIÓN IA
+# ==========================================
+os.environ['TZ'] = 'America/Mexico_City'
+try:
+    time.tzset()
+    print(f"✅ [RELOJ] Hora local sincronizada: {datetime.now()}")
+except:
+    pass
+
+# Inicializar lector IA (Se carga una vez en memoria)
+reader = easyocr.Reader(['es'], gpu=False)
+
+# ==========================================
+# 1. ESTADO Y VARIABLES GLOBALES (RUTAS CORREGIDAS)
+# ==========================================
+BASE_DIR = "/mnt/darat"
+DB_FILE = f"{BASE_DIR}/data/cola_mensajes.db"
+FOTOS_PATH = "/mnt/darat/multas_fotos/"
+VIDEO_PATH = "/mnt/darat/clips/"
+LOG_FILE = f"{VIDEO_PATH}velocidades.log"
+
+LAST_SEEN = {name: time.time() for name in RADARES} 
+RADAR_STATUS = {name: True for name in RADARES}     
+
+# Asegurar que las carpetas existan en el nuevo disco
+for ruta in [FOTOS_PATH, VIDEO_PATH, f"{BASE_DIR}/data"]:
+    if not os.path.exists(ruta):
+        os.makedirs(ruta, exist_ok=True)
+
+# ==========================================
+# 2. CAPA DE DATOS (SQLite / IA / Cola)
+# ==========================================
+def init_db():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS cola (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tipo TEXT, endpoint TEXT, payload TEXT,
+                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS historial (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        radar TEXT, 
+                        velocidad INTEGER, 
+                        fecha DATE DEFAULT (CURRENT_DATE),
+                        hora TIME DEFAULT (CURRENT_TIME),
+                        foto TEXT,
+                        placa TEXT)''')
+        
+        conn.commit()
+        conn.close()
+        print(f"✅ [DB] Estructura lista en: {DB_FILE}")
+    except Exception as e:
+        print(f"❌ [DB] Error: {e}")
+
+def registrar_historial(radar, speed, foto=None, placa=None):
+    """Guarda detección incluyendo evidencia visual y lectura de IA."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        fecha_local = datetime.now().strftime('%Y-%m-%d')
+        hora_local = datetime.now().strftime('%H:%M:%S')
+        
+        c.execute("INSERT INTO historial (radar, velocidad, fecha, hora, foto, placa) VALUES (?, ?, ?, ?, ?, ?)", 
+                  (radar, speed, fecha_local, hora_local, foto, placa))
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"❌ [DB] Error al registrar historial: {e}")
+
+def guardar_en_cola(metodo, params):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT INTO cola (tipo, endpoint, payload) VALUES (?, ?, ?)",
+                  (metodo, f"https://api.telegram.org/bot{TOKEN}/{metodo}", json.dumps(params)))
+        conn.commit()
+        conn.close()
+    except: pass
+
+def procesar_cola_reintentos():
+    while True:
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("SELECT * FROM cola ORDER BY id ASC LIMIT 5")
+            for fila in c.fetchall():
+                bid, tipo, endpoint, p_str, fecha = fila
+                try:
+                    r = requests.post(endpoint, json=json.loads(p_str), timeout=10)
+                    if r.status_code == 200:
+                        c.execute("DELETE FROM cola WHERE id=?", (bid,))
+                        conn.commit()
+                except: pass
+            conn.close()
+        except: pass
+        time.sleep(60)
+
+# ==========================================
+# 3. MOTOR DE INTELIGENCIA ARTIFICIAL (LPR)
+# ==========================================
+def procesar_lpr(ruta_foto):
+    """Analiza únicamente la MITAD IZQUIERDA de la imagen para extraer la placa."""
+    try:
+        img = cv2.imread(ruta_foto)
+        if img is None: return "ERROR_IMAGEN"
+        
+        alto, ancho = img.shape[:2]
+        recorte = img[0:alto, 0:ancho // 2]
+        
+        resultados = reader.readtext(recorte)
+        
+        for (bbox, text, prob) in resultados:
+            limpio = "".join(e for e in text if e.isalnum()).upper()
+            if len(limpio) >= 4:
+                print(f"🔎 [IA] Placa detectada (IZQ): {limpio} ({int(prob*100)}% conf)")
+                return limpio
+        return "NO_DETECTADA"
+    except Exception as e:
+        print(f"⚠️ [IA] Error en OCR: {e}")
+        return "ERROR_IA"
+
+# ==========================================
+# 4. COMUNICACIÓN Y MANTENIMIENTO
+# ==========================================
+def enviar_seguro(metodo, params, files=None):
+    url = f"https://api.telegram.org/bot{TOKEN}/{metodo}"
+    try:
+        if files:
+            r = requests.post(url, data=params, files=files, timeout=25)
+        else:
+            r = requests.post(url, json=params, timeout=10)
+        r.raise_for_status()
+    except:
+        if metodo not in ["sendPhoto", "sendVideo"]:
+            guardar_en_cola(metodo, params)
+
+def motor_mantenimiento():
+    print("🕵️ [SISTEMA] Watchdog y Auto-limpieza activos.")
+    while True:
+        ahora = time.time()
+        for nombre, last_time in LAST_SEEN.items():
+            diff = ahora - last_time
+            if diff > 3600 and RADAR_STATUS[nombre]:
+                RADAR_STATUS[nombre] = False
+                enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"🚨 <b>SISTEMA:</b> {nombre} OFFLINE.", "parse_mode": "HTML"})
+            elif diff < 60 and not RADAR_STATUS[nombre]:
+                RADAR_STATUS[nombre] = True
+                enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"✅ <b>SISTEMA:</b> {nombre} ONLINE.", "parse_mode": "HTML"})
+        
+        try:
+            st = os.statvfs(BASE_DIR)
+            uso = ((st.f_blocks - st.f_bavail) / st.f_blocks) * 100
+            if uso > 90:
+                archivos = sorted([os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH)], key=os.path.getmtime)
+                for i in range(min(20, len(archivos))): os.remove(archivos[i])
+        except: pass
+        time.sleep(300)
+
+# ==========================================
+# 5. LÓGICA DE DETECCIÓN Y MULTIMEDIA
+# ==========================================
+def clasificar_infraccion(velocidad):
+    if velocidad <= 54: return "🚗 PREVENTIVO", "✅"
+    elif 55 <= velocidad <= 59: return "⚠️ ALERTA", "🟡"
+    else: return "🚀 GRAVE", "🔴"
+
+def axis_overlay(ip, speed, clear=False):
+    txt = " " if clear else f"INFRACCION: {speed} km/h"
+    try:
+        requests.get(f"http://{ip}/axis-cgi/overlaymanager.cgi?action=settext&text={txt.replace(' ', '+')}", 
+                      auth=HTTPDigestAuth(USER, PASS), timeout=5)
+        if not clear: threading.Timer(8, axis_overlay, [ip, 0, True]).start()
+    except: pass
+
+def grabar_y_enviar_video(ip, speed, caption):
+    ahora_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    fname = f"{VIDEO_PATH}inf_{speed}_{ahora_str}.mp4"
+    comando = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "15", "-c", "copy", "-y", fname]
+    try:
+        subprocess.run(comando, check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(fname) and os.path.getsize(fname) > 100000:
+            with open(fname, 'rb') as v:
+                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+    except: pass
+
+def procesar_deteccion(radar_name, ip, speed):
+    categoria, emoji = clasificar_infraccion(speed)
+    ahora_dt = datetime.now()
+    ahora_str = ahora_dt.strftime('%H:%M:%S')
+    
+    archivo_foto = None
+    texto_placa = "NO_APLICA"
+
+    if speed >= 55:
+        axis_overlay(ip, speed)
+        try:
+            r = requests.get(f"http://{ip}/axis-cgi/jpg/image.cgi", auth=HTTPDigestAuth(USER, PASS), timeout=15)
+            if r.status_code == 200:
+                archivo_foto = f"{radar_name}_{speed}_{ahora_dt.strftime('%Y%m%d_%H%M%S')}.jpg"
+                ruta_completa = os.path.join(FOTOS_PATH, archivo_foto)
+                with open(ruta_completa, "wb") as f:
+                    f.write(r.content)
+                
+                # IA procesando solo la mitad izquierda del archivo guardado
+                texto_placa = procesar_lpr(ruta_completa)
+        except Exception as e:
+            print(f"⚠️ Error capturando foto/IA: {e}")
+
+    # Registrar siempre en historial (IA + DB)
+    registrar_historial(radar_name, speed, archivo_foto, texto_placa)
+
+    # --- DOBLE ESCRITURA: LOG DE TEXTO PARA TAIL -F ---
+    try:
+        log_line = f"[{ahora_dt}] {radar_name} - {speed} km/h - {categoria}\n"
+        with open(LOG_FILE, "a") as f:
+            f.write(log_line)
+    except:
+        pass
+    
+    placa_txt = f"\n📄 Placa: <b>{texto_placa}</b>" if texto_placa not in ["NO_APLICA", "NO_DETECTADA"] else ""
+    caption = f"{emoji} <b>{categoria}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n⏰ Hora: {ahora_str}{placa_txt}"
+    
+    if speed >= 55:
+        # Video solo para Graves (>=60)
+        if speed >= 60: threading.Thread(target=grabar_y_enviar_video, args=(ip, speed, caption)).start()
+        
+        # Enviar foto capturada
+        if archivo_foto:
+            ruta_completa = os.path.join(FOTOS_PATH, archivo_foto)
+            with open(ruta_completa, 'rb') as p:
+                enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'photo': p})
+        
+        # Sticker Kirby solo para Graves
+        if speed >= 60 and 'STICKER_KIRBY' in globals():
+            enviar_seguro("sendSticker", {"chat_id": CHAT_ID, "sticker": STICKER_KIRBY})
+    else:
+        # Preventivos: Solo texto
+        enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": caption, "parse_mode": "HTML"})
+
+def escuchar_radar(nombre, ip, puerto):
+    print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
+    while True:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(15); s.connect((ip, puerto))
+            while True:
+                data = s.recv(1024)
+                if not data: break
+                LAST_SEEN[nombre] = time.time()
+                speed = 0
+                if b'\xfc\xfa' in data: speed = data[data.find(b'\xfc\xfa') + 2]
+                elif b'\xfb\xfd' in data: speed = data[data.find(b'\xfb\xfd') + 2]
+                if speed >= 1: 
+                    threading.Thread(target=procesar_deteccion, args=(nombre, ip, speed)).start()
+        except: time.sleep(10)
+
+if __name__ == "__main__":
+    init_db()
+    threading.Thread(target=procesar_cola_reintentos, daemon=True).start()
+    threading.Thread(target=motor_mantenimiento, daemon=True).start()
+    for n, d in RADARES.items():
+        threading.Thread(target=escuchar_radar, args=(n, d['ip'], d['puerto']), daemon=True).start()
+    while True: time.sleep(1)
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/Dockerfile
+################################################################################
+
+# Manteniendo tu línea base
+FROM python:3.10-slim
+
+# Manteniendo tu bloque de configuración de zona horaria
+RUN apt-get update && apt-get install -y tzdata && \
+    ln -snf /usr/share/zoneinfo/America/Mexico_City /etc/localtime && \
+    echo "America/Mexico_City" > /etc/timezone
+
+# --- BLOQUE DE INSTALACIÓN DE DEPENDENCIAS ---
+# Establecemos el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copiamos el archivo de requerimientos
+COPY requirements.txt .
+
+# Instalamos las librerías necesarias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiamos todo el código de la aplicación (app.py y otros archivos)
+COPY . .
+
+# Exponemos el puerto que usa Streamlit
+EXPOSE 8501
+
+# Comando para ejecutar la aplicación al iniciar el contenedor
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/app.py
+################################################################################
+
+import streamlit as st
+import pandas as pd
+import sqlite3
+import os
+import plotly.express as px
+from datetime import datetime, date, timedelta
+import io
+import time
+
+# ==========================================
+# CONFIGURACIÓN DE TIEMPO (AJUSTE MANUAL SEGURO)
+# ==========================================
+OFFSET_HORAS = -0
+
+DB_PATH = '/app/data_folder/cola_mensajes.db'
+CLIPS_DIR = "/app/clips/"
+
+USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
+LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
+
+pd.set_option("styler.render.max_elements", 1000000)
+st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
+
+# --- MEJORA: LÓGICA DE BIENVENIDA SE-MAMO_GEMINI ---
+if "welcome_shown" not in st.session_state:
+    st.toast("🚀 Sistema se-mamo_gemini: ONLINE", icon="🤖")
+    st.balloons()
+    st.session_state.welcome_shown = True
+
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+st.markdown("""
+    <style> 
+        .main { background-color: #0e1117; }
+        .stMetric { 
+            background-color: #161b22; 
+            border-radius: 10px; padding: 15px; 
+            border: 1px solid #30363d; border-left: 5px solid #00ff00; 
+        }
+        .time-box {
+            text-align: right; color: #00ff00; font-family: 'Courier New', monospace;
+            padding: 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a;
+        }
+        .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- MEJORA: BANNER DE ESTADO PROYECTO ---
+st.success(f"🛠️ **PROYECTO: RADAR** | Almacenamiento: **900GB** | Estado: **Sincronizado**")
+
+# Hora local calculada manualmente
+hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
+
+# --- HEADER ---
+col_t1, col_t2 = st.columns([3, 1])
+with col_t1:
+    st.title("📊 Panel de Control - Radar Infracciones")
+    st.caption(f"📡 radar.radar-lcc.site | Sincronización CST: {hora_local.strftime('%H:%M:%S')}")
+with col_t2:
+    st.markdown(f"""
+        <div class="time-box">
+            <small>SINCRO LOCAL (CST)</small><br>
+            📅 {hora_local.strftime('%d/%m/%Y')}<br>
+            🕒 {hora_local.strftime('%H:%M:%S')}
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- FUNCIONES DE DATOS ---
+@st.cache_data(ttl=15)
+def get_data():
+    try:
+        if not os.path.exists(DB_PATH):
+            return pd.DataFrame()
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("SELECT id, radar, velocidad, fecha, hora FROM historial ORDER BY id DESC", conn)
+        conn.close()
+        
+        if df.empty:
+            return df
+
+        # Combinamos y aplicamos el offset manual
+        df['fecha_completa'] = pd.to_datetime(df['fecha'].astype(str) + ' ' + df['hora'].astype(str))
+        df['fecha_completa'] = df['fecha_completa'] + timedelta(hours=OFFSET_HORAS)
+        
+        return df
+    except Exception as e:
+        st.error(f"Error DB: {e}")
+        return pd.DataFrame()
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2343/2343277.png", width=100)
+    st.header("🛠️ Estado del Sistema")
+    
+    if os.path.exists(CLIPS_DIR):
+        st.success("📁 Disco 900GB: CONECTADO")
+    else:
+        st.error("📁 Disco 900GB: DESCONECTADO")
+
+    st.divider()
+    
+    st.markdown("### 📡 Actividad en Vivo (15 min)")
+    df_raw = get_data()
+    
+    if not df_raw.empty:
+        tiempo_corte = hora_local - timedelta(minutes=15)
+        df_logs = df_raw[df_raw['fecha_completa'] >= tiempo_corte].copy()
+        
+        if not df_logs.empty:
+            for _, row in df_logs.head(8).iterrows():
+                color = "#ff4b4b" if row['velocidad'] >= 60 else "#ffaa00" if row['velocidad'] >= 41 else "#00ff00"
+                st.markdown(f"<div style='font-size:11px; color:{color}; font-family:monospace;'>● {row['fecha_completa'].strftime('%H:%M')} | {row['radar']} | {row['velocidad']} km/h</div>", unsafe_allow_html=True)
+        else:
+            st.info("Sin actividad reciente.")
+    
+    st.divider()
+    st.markdown("### ✈️ Accesos Directos")
+    st.link_button("🤖 Abrir Bot @Rocket_lcc_bot", f"https://t.me/{USER_BOT_TELEGRAM}", use_container_width=True)
+    st.link_button("🚨 Grupo LCC-RADAR", LINK_GRUPO_ALERTAS, use_container_width=True)
+
+# --- CUERPO PRINCIPAL ---
+if not df_raw.empty:
+    df = df_raw.copy()
+    
+    st.sidebar.header("🔎 Filtros")
+    lista_radares = ["TODOS"] + sorted(df['radar'].unique().tolist())
+    radar_sel = st.sidebar.selectbox("Seleccionar Radar", lista_radares)
+    if radar_sel != "TODOS":
+        df = df[df['radar'] == radar_sel]
+
+    f_min, f_max = df['fecha_completa'].dt.date.min(), df['fecha_completa'].dt.date.max()
+    rango = st.sidebar.date_input("Rango de Fechas", value=(max(f_min, f_max - timedelta(days=7)), f_max))
+    
+    if len(rango) == 2:
+        df = df[(df['fecha_completa'].dt.date >= rango[0]) & (df['fecha_completa'].dt.date <= rango[1])]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Infracciones", f"{len(df):,}")
+    m2.metric("Promedio Velocidad", f"{round(df['velocidad'].mean(), 1)} km/h")
+    m3.metric("Récord Registrado", f"{df['velocidad'].max()} km/h")
+    m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
+
+    st.divider()
+
+    col_chart1, col_chart2 = st.columns([1, 2])
+    with col_chart1:
+        st.subheader("🎯 Reparto por Radar")
+        fig_pie = px.pie(df, names='radar', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_pie.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.5))
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    with col_chart2:
+        st.subheader("📈 Tendencia de Detecciones")
+        df['hora_int'] = df['fecha_completa'].dt.hour
+        fig_area = px.area(df.groupby('hora_int').size().reset_index(name='count'), x='hora_int', y='count', template="plotly_dark", color_discrete_sequence=['#00ff00'])
+        st.plotly_chart(fig_area, use_container_width=True)
+
+    st.divider()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📋 Últimos Registros")
+        df_display = df[['radar', 'velocidad', 'fecha_completa']].copy()
+        df_display['fecha_completa'] = df_display['fecha_completa'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        st.dataframe(df_display.head(100), use_container_width=True)
+        
+        output = io.BytesIO()
+        df.to_excel(output, index=False)
+        st.download_button("📥 Exportar Reporte Excel", output.getvalue(), "reporte_radar.xlsx")
+
+    with c2:
+        st.subheader("🎥 Evidencias de Video (900GB)")
+        fecha_v = st.date_input("Día de grabación", value=hora_local.date())
+        if os.path.exists(CLIPS_DIR):
+            files = [f for f in os.listdir(CLIPS_DIR) if f.endswith(".mp4")]
+            files_f = [f for f in files if date.fromtimestamp(os.path.getmtime(os.path.join(CLIPS_DIR, f))) == fecha_v]
+            if files_f:
+                sel = st.selectbox(f"Videos ({len(files_f)})", sorted(files_f, reverse=True))
+                st.video(os.path.join(CLIPS_DIR, sel))
+            else: st.warning("No hay videos para hoy.")
+        else: st.error("Disco no accesible.")
+
+else:
+    st.warning("⚠️ Sin datos disponibles.")
+
+time.sleep(30)
+st.rerun()
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/requirements.txt
+################################################################################
+
+streamlit>=1.31.0
+pandas>=2.1.0
+plotly>=5.18.0
+xlsxwriter>=3.1.9
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/auditor_web.py
+################################################################################
+
+import os
+
+# ================= CONFIGURACIÓN =================
+RUTA_WEB = "/root/radar_web"  # Tu ruta confirmada
+SALIDA = "resumen_web.txt"
+
+# Archivos que nos interesa leer para entender tu web
+EXT_INTERES = {'.py', '.html', '.css', '.js', '.txt', '.yml', '.yaml'}
+ARCHIVOS_EXACTOS = {'Dockerfile'}
+
+# Carpetas y archivos a IGNORAR (Basura, binarios, DBs)
+DIRS_IGNORAR = {'.git', '__pycache__', 'imagenes_multas', 'venv', 'env', '.idea', 'vscode'}
+EXT_IGNORAR = {'.db', '.sqlite', '.rpm', '.pyc', '.png', '.jpg', '.mp4'}
+
+def debe_leerse(nombre_archivo):
+    if nombre_archivo in ARCHIVOS_EXACTOS: return True
+    _, ext = os.path.splitext(nombre_archivo)
+    return ext in EXT_INTERES and ext not in EXT_IGNORAR
+
+def procesar_directorio():
+    with open(SALIDA, 'w', encoding='utf-8') as f_out:
+        f_out.write(f"REPORTE DE CÓDIGO WEB - {RUTA_WEB}\n")
+        f_out.write("========================================\n")
+
+        if not os.path.exists(RUTA_WEB):
+            print(f"❌ Error: La ruta {RUTA_WEB} no existe.")
+            return
+
+        for raiz, dirs, archivos in os.walk(RUTA_WEB):
+            # Filtrar carpetas ignoradas
+            dirs[:] = [d for d in dirs if d not in DIRS_IGNORAR]
+
+            for archivo in archivos:
+                if debe_leerse(archivo):
+                    ruta_completa = os.path.join(raiz, archivo)
+                    try:
+                        with open(ruta_completa, 'r', encoding='utf-8', errors='ignore') as f_in:
+                            contenido = f_in.read()
+                            
+                        f_out.write(f"\n\n--- ARCHIVO: {archivo} ({raiz}) ---\n")
+                        f_out.write(contenido)
+                        f_out.write(f"\n--- FIN: {archivo} ---\n")
+                        print(f"✅ Leído: {archivo}")
+                    except Exception as e:
+                        print(f"⚠️ No se pudo leer {archivo}: {e}")
+
+if __name__ == "__main__":
+    procesar_directorio()
+    print(f"\n✨ ¡Listo! Archivo creado: {SALIDA}")
+    print("👉 Ejecuta: cat resumen_web.txt")
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/docker-compose.yml
+################################################################################
+
+version: '3.8'
+
+services:
+  radar_dashboard:
+    build: .
+    container_name: radar_dashboard
+    ports:
+      - "8085:8501"
+    environment:
+      - TZ=America/Mexico_City
+    volumes:
+      # Conectamos a la base de datos en el disco de 900GB
+      - /mnt/darat/data:/app/data_folder
+      
+      # Conectamos a los clips de video (solo lectura)
+      - /mnt/darat/clips:/app/clips:ro
+      
+      # Configuración de la interfaz
+      - ./.streamlit:/app/.streamlit:ro
+      
+      # Carpeta de las páginas (donde vive Infracciones_Graves.py)
+      - ./pages:/app/pages
+      
+      # --- CORRECCIÓN DE RUTA DE FOTOS ---
+      # Conectamos la carpeta física de 900GB a la carpeta interna que lee Streamlit
+      - /mnt/darat/multas_fotos:/app/imagenes_multas
+    restart: always
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/resumen_web.txt
+################################################################################
+
+REPORTE DE CÓDIGO WEB - /root/radar_web
+========================================
+
+
+--- ARCHIVO: Dockerfile (/root/radar_web) ---
+# Manteniendo tu línea base
+FROM python:3.10-slim
+
+# Manteniendo tu bloque de configuración de zona horaria
+RUN apt-get update && apt-get install -y tzdata && \
+    ln -snf /usr/share/zoneinfo/America/Mexico_City /etc/localtime && \
+    echo "America/Mexico_City" > /etc/timezone
+
+# --- BLOQUE DE INSTALACIÓN DE DEPENDENCIAS ---
+# Establecemos el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copiamos el archivo de requerimientos
+COPY requirements.txt .
+
+# Instalamos las librerías necesarias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiamos todo el código de la aplicación (app.py y otros archivos)
+COPY . .
+
+# Exponemos el puerto que usa Streamlit
+EXPOSE 8501
+
+# Comando para ejecutar la aplicación al iniciar el contenedor
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+--- FIN: Dockerfile ---
+
+
+--- ARCHIVO: app.py (/root/radar_web) ---
+import streamlit as st
+import pandas as pd
+import sqlite3
+import os
+import plotly.express as px
+from datetime import datetime, date, timedelta
+import io
+import time
+
+# ==========================================
+# CONFIGURACIÓN DE TIEMPO (AJUSTE MANUAL SEGURO)
+# ==========================================
+# Si el reloj marca una hora incorrecta, ajusta este número.
+# Ejemplo: Si son las 10:00 y marca las 16:00, pon -6.
+OFFSET_HORAS = -0
+
+DB_PATH = '/app/data_folder/cola_mensajes.db'
+CLIPS_DIR = "/app/clips/"
+
+USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
+LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
+
+pd.set_option("styler.render.max_elements", 1000000)
+st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
+
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+st.markdown("""
+    <style> 
+        .main { background-color: #0e1117; }
+        .stMetric { 
+            background-color: #161b22; 
+            border-radius: 10px; padding: 15px; 
+            border: 1px solid #30363d; border-left: 5px solid #00ff00; 
+        }
+        .time-box {
+            text-align: right; color: #00ff00; font-family: 'Courier New', monospace;
+            padding: 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a;
+        }
+        .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Hora local calculada manualmente (Más robusto si el servidor tiene hora UTC)
+hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
+
+# --- HEADER ---
+col_t1, col_t2 = st.columns([3, 1])
+with col_t1:
+    st.title("📊 Panel de Control - Radar Infracciones")
+    st.caption(f"📡 radar.radar-lcc.site | Sincronización CST: {hora_local.strftime('%H:%M:%S')}")
+with col_t2:
+    st.markdown(f"""
+        <div class="time-box">
+            <small>SINCRO LOCAL (CST)</small><br>
+            📅 {hora_local.strftime('%d/%m/%Y')}<br>
+            🕒 {hora_local.strftime('%H:%M:%S')}
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- FUNCIONES DE DATOS ---
+@st.cache_data(ttl=15)
+def get_data():
+    try:
+        if not os.path.exists(DB_PATH):
+            return pd.DataFrame()
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("SELECT id, radar, velocidad, fecha, hora FROM historial ORDER BY id DESC", conn)
+        conn.close()
+        
+        if df.empty:
+            return df
+
+        # Combinamos y aplicamos el offset manual
+        df['fecha_completa'] = pd.to_datetime(df['fecha'].astype(str) + ' ' + df['hora'].astype(str))
+        df['fecha_completa'] = df['fecha_completa'] + timedelta(hours=OFFSET_HORAS)
+        
+        return df
+    except Exception as e:
+        st.error(f"Error DB: {e}")
+        return pd.DataFrame()
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2343/2343277.png", width=100)
+    st.header("🛠️ Estado del Sistema")
+    
+    if os.path.exists(CLIPS_DIR):
+        st.success("📁 Disco 900GB: CONECTADO")
+    else:
+        st.error("📁 Disco 900GB: DESCONECTADO")
+
+    st.divider()
+    
+    st.markdown("### 📡 Actividad en Vivo (15 min)")
+    df_raw = get_data()
+    
+    if not df_raw.empty:
+        tiempo_corte = hora_local - timedelta(minutes=15)
+        df_logs = df_raw[df_raw['fecha_completa'] >= tiempo_corte].copy()
+        
+        if not df_logs.empty:
+            for _, row in df_logs.head(8).iterrows():
+                color = "#ff4b4b" if row['velocidad'] >= 60 else "#ffaa00" if row['velocidad'] >= 41 else "#00ff00"
+                st.markdown(f"<div style='font-size:11px; color:{color}; font-family:monospace;'>● {row['fecha_completa'].strftime('%H:%M')} | {row['radar']} | {row['velocidad']} km/h</div>", unsafe_allow_html=True)
+        else:
+            st.info("Sin actividad reciente.")
+    
+    st.divider()
+    st.markdown("### ✈️ Accesos Directos")
+    st.link_button("🤖 Abrir Bot @Rocket_lcc_bot", f"https://t.me/{USER_BOT_TELEGRAM}", use_container_width=True)
+    st.link_button("🚨 Grupo LCC-RADAR", LINK_GRUPO_ALERTAS, use_container_width=True)
+
+# --- CUERPO PRINCIPAL ---
+if not df_raw.empty:
+    df = df_raw.copy()
+    
+    st.sidebar.header("🔎 Filtros")
+    lista_radares = ["TODOS"] + sorted(df['radar'].unique().tolist())
+    radar_sel = st.sidebar.selectbox("Seleccionar Radar", lista_radares)
+    if radar_sel != "TODOS":
+        df = df[df['radar'] == radar_sel]
+
+    f_min, f_max = df['fecha_completa'].dt.date.min(), df['fecha_completa'].dt.date.max()
+    rango = st.sidebar.date_input("Rango de Fechas", value=(max(f_min, f_max - timedelta(days=7)), f_max))
+    
+    if len(rango) == 2:
+        df = df[(df['fecha_completa'].dt.date >= rango[0]) & (df['fecha_completa'].dt.date <= rango[1])]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Infracciones", f"{len(df):,}")
+    m2.metric("Promedio Velocidad", f"{round(df['velocidad'].mean(), 1)} km/h")
+    m3.metric("Récord Registrado", f"{df['velocidad'].max()} km/h")
+    m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
+
+    st.divider()
+
+    col_chart1, col_chart2 = st.columns([1, 2])
+    with col_chart1:
+        st.subheader("🎯 Reparto por Radar")
+        fig_pie = px.pie(df, names='radar', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_pie.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.5))
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    with col_chart2:
+        st.subheader("📈 Tendencia de Detecciones")
+        df['hora_int'] = df['fecha_completa'].dt.hour
+        fig_area = px.area(df.groupby('hora_int').size().reset_index(name='count'), x='hora_int', y='count', template="plotly_dark", color_discrete_sequence=['#00ff00'])
+        st.plotly_chart(fig_area, use_container_width=True)
+
+    st.divider()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📋 Últimos Registros")
+        df_display = df[['radar', 'velocidad', 'fecha_completa']].copy()
+        df_display['fecha_completa'] = df_display['fecha_completa'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        st.dataframe(df_display.head(100), use_container_width=True)
+        
+        output = io.BytesIO()
+        df.to_excel(output, index=False)
+        st.download_button("📥 Exportar Reporte Excel", output.getvalue(), "reporte_radar.xlsx")
+
+    with c2:
+        st.subheader("🎥 Evidencias de Video (900GB)")
+        fecha_v = st.date_input("Día de grabación", value=hora_local.date())
+        if os.path.exists(CLIPS_DIR):
+            files = [f for f in os.listdir(CLIPS_DIR) if f.endswith(".mp4")]
+            files_f = [f for f in files if date.fromtimestamp(os.path.getmtime(os.path.join(CLIPS_DIR, f))) == fecha_v]
+            if files_f:
+                sel = st.selectbox(f"Videos ({len(files_f)})", sorted(files_f, reverse=True))
+                st.video(os.path.join(CLIPS_DIR, sel))
+            else: st.warning("No hay videos para hoy.")
+        else: st.error("Disco no accesible.")
+
+else:
+    st.warning("⚠️ Sin datos disponibles.")
+
+time.sleep(30)
+st.rerun()
+--- FIN: app.py ---
+
+
+--- ARCHIVO: requirements.txt (/root/radar_web) ---
+streamlit>=1.31.0
+pandas>=2.1.0
+plotly>=5.18.0
+xlsxwriter>=3.1.9
+--- FIN: requirements.txt ---
+
+
+--- ARCHIVO: auditor_web.py (/root/radar_web) ---
+import os
+
+# ================= CONFIGURACIÓN =================
+RUTA_WEB = "/root/radar_web"  # Tu ruta confirmada
+SALIDA = "resumen_web.txt"
+
+# Archivos que nos interesa leer para entender tu web
+EXT_INTERES = {'.py', '.html', '.css', '.js', '.txt', '.yml', '.yaml'}
+ARCHIVOS_EXACTOS = {'Dockerfile'}
+
+# Carpetas y archivos a IGNORAR (Basura, binarios, DBs)
+DIRS_IGNORAR = {'.git', '__pycache__', 'imagenes_multas', 'venv', 'env', '.idea', 'vscode'}
+EXT_IGNORAR = {'.db', '.sqlite', '.rpm', '.pyc', '.png', '.jpg', '.mp4'}
+
+def debe_leerse(nombre_archivo):
+    if nombre_archivo in ARCHIVOS_EXACTOS: return True
+    _, ext = os.path.splitext(nombre_archivo)
+    return ext in EXT_INTERES and ext not in EXT_IGNORAR
+
+def procesar_directorio():
+    with open(SALIDA, 'w', encoding='utf-8') as f_out:
+        f_out.write(f"REPORTE DE CÓDIGO WEB - {RUTA_WEB}\n")
+        f_out.write("========================================\n")
+
+        if not os.path.exists(RUTA_WEB):
+            print(f"❌ Error: La ruta {RUTA_WEB} no existe.")
+            return
+
+        for raiz, dirs, archivos in os.walk(RUTA_WEB):
+            # Filtrar carpetas ignoradas
+            dirs[:] = [d for d in dirs if d not in DIRS_IGNORAR]
+
+            for archivo in archivos:
+                if debe_leerse(archivo):
+                    ruta_completa = os.path.join(raiz, archivo)
+                    try:
+                        with open(ruta_completa, 'r', encoding='utf-8', errors='ignore') as f_in:
+                            contenido = f_in.read()
+                            
+                        f_out.write(f"\n\n--- ARCHIVO: {archivo} ({raiz}) ---\n")
+                        f_out.write(contenido)
+                        f_out.write(f"\n--- FIN: {archivo} ---\n")
+                        print(f"✅ Leído: {archivo}")
+                    except Exception as e:
+                        print(f"⚠️ No se pudo leer {archivo}: {e}")
+
+if __name__ == "__main__":
+    procesar_directorio()
+    print(f"\n✨ ¡Listo! Archivo creado: {SALIDA}")
+    print("👉 Ejecuta: cat resumen_web.txt")
+
+--- FIN: auditor_web.py ---
+
+
+--- ARCHIVO: docker-compose.yml (/root/radar_web) ---
+version: '3.8'
+
+services:
+  radar_dashboard:
+    build: .
+    container_name: radar_dashboard
+    ports:
+      - "8085:8501"
+    environment:
+      - TZ=America/Mexico_City
+    volumes:
+      # Conectamos a la base de datos en el disco de 900GB
+      - /mnt/darat/data:/app/data_folder
+      
+      # Conectamos a los clips de video (solo lectura)
+      - /mnt/darat/clips:/app/clips:ro
+      
+      # Configuración de la interfaz
+      - ./.streamlit:/app/.streamlit:ro
+      
+      # Carpeta de las páginas (donde vive Infracciones_Graves.py)
+      - ./pages:/app/pages
+      
+      # --- CORRECCIÓN DE RUTA DE FOTOS ---
+      # Conectamos la carpeta física de 900GB a la carpeta interna que lee Streamlit
+      - /mnt/darat/multas_fotos:/app/imagenes_multas
+    restart: always
+--- FIN: docker-compose.yml ---
+
+
+--- ARCHIVO: resumen_web.txt (/root/radar_web) ---
+REPORTE DE CÓDIGO WEB - /root/radar_web
+========================================
+
+
+--- ARCHIVO: Dockerfile (/root/radar_web) ---
+# Manteniendo tu línea base
+FROM python:3.10-slim
+
+# Manteniendo tu bloque de configuración de zona horaria
+RUN apt-get update && apt-get install -y tzdata && \
+    ln -snf /usr/share/zoneinfo/America/Mexico_City /etc/localtime && \
+    echo "America/Mexico_City" > /etc/timezone
+
+# --- BLOQUE DE INSTALACIÓN DE DEPENDENCIAS ---
+# Establecemos el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copiamos el archivo de requerimientos
+COPY requirements.txt .
+
+# Instalamos las librerías necesarias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiamos todo el código de la aplicación (app.py y otros archivos)
+COPY . .
+
+# Exponemos el puerto que usa Streamlit
+EXPOSE 8501
+
+# Comando para ejecutar la aplicación al iniciar el contenedor
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+--- FIN: Dockerfile ---
+
+
+--- ARCHIVO: app.py (/root/radar_web) ---
+import streamlit as st
+import pandas as pd
+import sqlite3
+import os
+import plotly.express as px
+from datetime import datetime, date, timedelta
+import io
+import time
+
+# ==========================================
+# CONFIGURACIÓN DE TIEMPO (AJUSTE MANUAL SEGURO)
+# ==========================================
+# Si el reloj marca una hora incorrecta, ajusta este número.
+# Ejemplo: Si son las 10:00 y marca las 16:00, pon -6.
+OFFSET_HORAS = -0
+
+DB_PATH = '/app/data_folder/cola_mensajes.db'
+CLIPS_DIR = "/app/clips/"
+
+USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
+LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
+
+pd.set_option("styler.render.max_elements", 1000000)
+st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
+
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+st.markdown("""
+    <style> 
+        .main { background-color: #0e1117; }
+        .stMetric { 
+            background-color: #161b22; 
+            border-radius: 10px; padding: 15px; 
+            border: 1px solid #30363d; border-left: 5px solid #00ff00; 
+        }
+        .time-box {
+            text-align: right; color: #00ff00; font-family: 'Courier New', monospace;
+            padding: 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a;
+        }
+        .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Hora local calculada manualmente (Más robusto si el servidor tiene hora UTC)
+hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
+
+# --- HEADER ---
+col_t1, col_t2 = st.columns([3, 1])
+with col_t1:
+    st.title("📊 Panel de Control - Radar Infracciones")
+    st.caption(f"📡 radar.radar-lcc.site | Sincronización CST: {hora_local.strftime('%H:%M:%S')}")
+with col_t2:
+    st.markdown(f"""
+        <div class="time-box">
+            <small>SINCRO LOCAL (CST)</small><br>
+            📅 {hora_local.strftime('%d/%m/%Y')}<br>
+            🕒 {hora_local.strftime('%H:%M:%S')}
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- FUNCIONES DE DATOS ---
+@st.cache_data(ttl=15)
+def get_data():
+    try:
+        if not os.path.exists(DB_PATH):
+            return pd.DataFrame()
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("SELECT id, radar, velocidad, fecha, hora FROM historial ORDER BY id DESC", conn)
+        conn.close()
+        
+        if df.empty:
+            return df
+
+        # Combinamos y aplicamos el offset manual
+        df['fecha_completa'] = pd.to_datetime(df['fecha'].astype(str) + ' ' + df['hora'].astype(str))
+        df['fecha_completa'] = df['fecha_completa'] + timedelta(hours=OFFSET_HORAS)
+        
+        return df
+    except Exception as e:
+        st.error(f"Error DB: {e}")
+        return pd.DataFrame()
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2343/2343277.png", width=100)
+    st.header("🛠️ Estado del Sistema")
+    
+    if os.path.exists(CLIPS_DIR):
+        st.success("📁 Disco 900GB: CONECTADO")
+    else:
+        st.error("📁 Disco 900GB: DESCONECTADO")
+
+    st.divider()
+    
+    st.markdown("### 📡 Actividad en Vivo (15 min)")
+    df_raw = get_data()
+    
+    if not df_raw.empty:
+        tiempo_corte = hora_local - timedelta(minutes=15)
+        df_logs = df_raw[df_raw['fecha_completa'] >= tiempo_corte].copy()
+        
+        if not df_logs.empty:
+            for _, row in df_logs.head(8).iterrows():
+                color = "#ff4b4b" if row['velocidad'] >= 60 else "#ffaa00" if row['velocidad'] >= 41 else "#00ff00"
+                st.markdown(f"<div style='font-size:11px; color:{color}; font-family:monospace;'>● {row['fecha_completa'].strftime('%H:%M')} | {row['radar']} | {row['velocidad']} km/h</div>", unsafe_allow_html=True)
+        else:
+            st.info("Sin actividad reciente.")
+    
+    st.divider()
+    st.markdown("### ✈️ Accesos Directos")
+    st.link_button("🤖 Abrir Bot @Rocket_lcc_bot", f"https://t.me/{USER_BOT_TELEGRAM}", use_container_width=True)
+    st.link_button("🚨 Grupo LCC-RADAR", LINK_GRUPO_ALERTAS, use_container_width=True)
+
+# --- CUERPO PRINCIPAL ---
+if not df_raw.empty:
+    df = df_raw.copy()
+    
+    st.sidebar.header("🔎 Filtros")
+    lista_radares = ["TODOS"] + sorted(df['radar'].unique().tolist())
+    radar_sel = st.sidebar.selectbox("Seleccionar Radar", lista_radares)
+    if radar_sel != "TODOS":
+        df = df[df['radar'] == radar_sel]
+
+    f_min, f_max = df['fecha_completa'].dt.date.min(), df['fecha_completa'].dt.date.max()
+    rango = st.sidebar.date_input("Rango de Fechas", value=(max(f_min, f_max - timedelta(days=7)), f_max))
+    
+    if len(rango) == 2:
+        df = df[(df['fecha_completa'].dt.date >= rango[0]) & (df['fecha_completa'].dt.date <= rango[1])]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Infracciones", f"{len(df):,}")
+    m2.metric("Promedio Velocidad", f"{round(df['velocidad'].mean(), 1)} km/h")
+    m3.metric("Récord Registrado", f"{df['velocidad'].max()} km/h")
+    m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
+
+    st.divider()
+
+    col_chart1, col_chart2 = st.columns([1, 2])
+    with col_chart1:
+        st.subheader("🎯 Reparto por Radar")
+        fig_pie = px.pie(df, names='radar', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_pie.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.5))
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    with col_chart2:
+        st.subheader("📈 Tendencia de Detecciones")
+        df['hora_int'] = df['fecha_completa'].dt.hour
+        fig_area = px.area(df.groupby('hora_int').size().reset_index(name='count'), x='hora_int', y='count', template="plotly_dark", color_discrete_sequence=['#00ff00'])
+        st.plotly_chart(fig_area, use_container_width=True)
+
+    st.divider()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📋 Últimos Registros")
+        df_display = df[['radar', 'velocidad', 'fecha_completa']].copy()
+        df_display['fecha_completa'] = df_display['fecha_completa'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        st.dataframe(df_display.head(100), use_container_width=True)
+        
+        output = io.BytesIO()
+        df.to_excel(output, index=False)
+        st.download_button("📥 Exportar Reporte Excel", output.getvalue(), "reporte_radar.xlsx")
+
+    with c2:
+        st.subheader("🎥 Evidencias de Video (900GB)")
+        fecha_v = st.date_input("Día de grabación", value=hora_local.date())
+        if os.path.exists(CLIPS_DIR):
+            files = [f for f in os.listdir(CLIPS_DIR) if f.endswith(".mp4")]
+            files_f = [f for f in files if date.fromtimestamp(os.path.getmtime(os.path.join(CLIPS_DIR, f))) == fecha_v]
+            if files_f:
+                sel = st.selectbox(f"Videos ({len(files_f)})", sorted(files_f, reverse=True))
+                st.video(os.path.join(CLIPS_DIR, sel))
+            else: st.warning("No hay videos para hoy.")
+        else: st.error("Disco no accesible.")
+
+else:
+    st.warning("⚠️ Sin datos disponibles.")
+
+time.sleep(30)
+st.rerun()
+--- FIN: app.py ---
+
+
+--- ARCHIVO: requirements.txt (/root/radar_web) ---
+streamlit>=1.31.0
+pandas>=2.1.0
+plotly>=5.18.0
+xlsxwriter>=3.1.9
+--- FIN: requirements.txt ---
+
+
+--- ARCHIVO: auditor_web.py (/root/radar_web) ---
+
+--- FIN: resumen_web.txt ---
+
+
+--- ARCHIVO: 1_🚨_Infracciones_Graves.py (/root/radar_web/pages) ---
+import streamlit as st
+import sqlite3
+import pandas as pd
+import os
+import time
+from datetime import datetime, timedelta
+
+# ==========================================
+# CONFIGURACIÓN DE PÁGINA
+# ==========================================
+st.set_page_config(page_title="Infracciones Graves", page_icon="🚨", layout="wide")
+
+# ==========================================
+# 1. DETECCIÓN DE RUTAS (INTELIGENTE)
+# ==========================================
+RUTAS_DB = [
+    '/app/data_folder/cola_mensajes.db',  # Docker
+    'db_radar.sqlite',                    # Local Symlink
+    'cola_mensajes.db'                    # Local Directo
+]
+DB_PATH = next((r for r in RUTAS_DB if os.path.exists(r)), None)
+FOTOS_DIR = "imagenes_multas"
+
+# ==========================================
+# 2. CARGA DE DATOS OPTIMIZADA (CACHE)
+# ==========================================
+@st.cache_data(ttl=15)  # Se actualiza cada 15 segundos automáticamente si hay cambios
+def cargar_graves(fecha_inicio, fecha_fin):
+    if not DB_PATH: return pd.DataFrame()
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        # Verificamos columnas para evitar errores
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(historial)")
+        cols = [i[1] for i in cursor.fetchall()]
+        
+        # --- DETECCIÓN DINÁMICA DE COLUMNAS NUEVAS ---
+        has_foto = 'foto' in cols
+        has_placa = 'placa' in cols
+        
+        col_foto = ", foto" if has_foto else ""
+        col_placa = ", placa" if has_placa else ""
+        
+        # Consulta actualizada para traer la PLACA también
+        query = f"""
+            SELECT id, radar, velocidad, fecha, hora {col_foto} {col_placa}
+            FROM historial 
+            WHERE velocidad >= 60 
+            AND fecha BETWEEN ? AND ?
+            ORDER BY fecha DESC, hora DESC
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(fecha_inicio, fecha_fin))
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error DB: {e}")
+        return pd.DataFrame()
+
+# ==========================================
+# 3. INTERFAZ Y FILTROS LATERALES
+# ==========================================
+st.title("🚨 Monitor de Infracciones Graves")
+st.markdown("---")
+
+# Sidebar para filtros
+with st.sidebar:
+    st.header("🔍 Filtros de Búsqueda")
+    
+    # Filtro de Fechas
+    hoy = datetime.now().date()
+    col1, col2 = st.columns(2)
+    f_inicio = col1.date_input("Desde", hoy - timedelta(days=7)) 
+    f_fin = col2.date_input("Hasta", hoy)
+    
+    # Carga de datos inicial con el rango seleccionado
+    df = cargar_graves(f_inicio, f_fin)
+    
+    # Filtro de Radar (dinámico)
+    radares_disponibles = ["Todos"] + sorted(list(df['radar'].unique())) if not df.empty else ["Todos"]
+    filtro_radar = st.selectbox("Seleccionar Radar:", radares_disponibles)
+    
+    # --- NUEVO: FILTRO POR PLACA ---
+    filtro_placa = st.text_input("Buscar por Placa:", "").upper()
+    
+    st.divider()
+    st.caption(f"📅 Mostrando datos del {f_inicio} al {f_fin}")
+    
+    if st.button("🔄 Actualizar Ahora", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# Aplicar filtros en memoria
+df_show = df.copy()
+if filtro_radar != "Todos":
+    df_show = df_show[df_show['radar'] == filtro_radar]
+
+if filtro_placa:
+    # Filtramos si la columna placa existe y el texto coincide
+    if 'placa' in df_show.columns:
+        df_show = df_show[df_show['placa'].str.contains(filtro_placa, na=False)]
+
+# ==========================================
+# 4. MÉTRICAS SUPERIORES (KPIs)
+# ==========================================
+if not df_show.empty:
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    
+    kpi1.metric("Total Graves", len(df_show), delta="En rango seleccionado")
+    
+    max_vel = df_show['velocidad'].max()
+    radar_max = df_show.loc[df_show['velocidad'].idxmax()]['radar']
+    kpi2.metric("Récord de Velocidad", f"{max_vel} km/h", radar_max, delta_color="inverse")
+    
+    radar_freq = df_show['radar'].mode()[0]
+    count_freq = len(df_show[df_show['radar'] == radar_freq])
+    kpi3.metric("Radar + Conflictivo", radar_freq, f"{count_freq} multas")
+
+    @st.cache_data
+    def convert_df(df):
+        return df.to_csv(index=False).encode('utf-8')
+
+    csv = convert_df(df_show)
+    kpi4.download_button(
+        label="📥 Descargar Reporte CSV",
+        data=csv,
+        file_name='infracciones_graves.csv',
+        mime='text/csv',
+    )
+    
+    st.markdown("---")
+
+# ==========================================
+# 5. GALERÍA DE TARJETAS (CON SOPORTE IA)
+# ==========================================
+if df_show.empty:
+    st.info("✅ No se encontraron infracciones graves con los filtros seleccionados.")
+else:
+    cols = st.columns(3)
+    
+    for index, row in df_show.reset_index().iterrows():
+        with cols[index % 3]:
+            with st.container(border=True):
+                # Encabezado
+                c_head1, c_head2 = st.columns([2, 1])
+                c_head1.subheader(f"⚡ {row['velocidad']} km/h")
+                c_head2.caption(f"{row['fecha']}")
+                
+                st.text(f"📍 {row['radar']} | 🕒 {row['hora']}")
+                
+                # --- MOSTRAR PLACA (CORRECCIÓN IA) ---
+                if 'placa' in row and row['placa'] not in [None, "NO_APLICA", "NO_DETECTADA", "ERROR_IA"]:
+                    st.success(f"🆔 **PLACA: {row['placa']}**")
+                else:
+                    st.warning("🆔 Placa: No identificada")
+                
+                # Imagen
+                nombre_foto = row.get('foto')
+                img_mostrada = False
+                
+                if nombre_foto:
+                    ruta_completa = os.path.join(FOTOS_DIR, nombre_foto)
+                    if os.path.exists(ruta_completa):
+                        st.image(ruta_completa, use_container_width=True)
+                        img_mostrada = True
+                
+                if not img_mostrada:
+                    st.markdown("""
+                        <div style="
+                            height: 150px; 
+                            background-color: #262730; 
+                            border-radius: 8px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: #888;
+                            border: 1px dashed #444;">
+                            📷 Sin Evidencia Visual
+                        </div>
+                    """, unsafe_allow_html=True)
+--- FIN: 1_🚨_Infracciones_Graves.py ---
+
+
+======================================== FIN DE ARCHIVO ========================================
+
+################################################################################
+📄 ARCHIVO: radar_web/pages/1_🚨_Infracciones_Graves.py
+################################################################################
+
+import streamlit as st
+import sqlite3
+import pandas as pd
+import os
+import time
+from datetime import datetime, timedelta
+
+# ==========================================
+# CONFIGURACIÓN DE PÁGINA
+# ==========================================
+st.set_page_config(page_title="Infracciones Graves", page_icon="🚨", layout="wide")
+
+# ==========================================
+# 1. DETECCIÓN DE RUTAS (INTELIGENTE)
+# ==========================================
+RUTAS_DB = [
+    '/app/data_folder/cola_mensajes.db',  # Docker
+    'db_radar.sqlite',                    # Local Symlink
+    'cola_mensajes.db'                    # Local Directo
+]
+DB_PATH = next((r for r in RUTAS_DB if os.path.exists(r)), None)
+FOTOS_DIR = "imagenes_multas"
+
+# ==========================================
+# 2. CARGA DE DATOS OPTIMIZADA (CACHE)
+# ==========================================
+@st.cache_data(ttl=15)  # Se actualiza cada 15 segundos automáticamente si hay cambios
+def cargar_graves(fecha_inicio, fecha_fin):
+    if not DB_PATH: return pd.DataFrame()
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        # Verificamos columnas para evitar errores
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(historial)")
+        cols = [i[1] for i in cursor.fetchall()]
+        
+        # --- DETECCIÓN DINÁMICA DE COLUMNAS NUEVAS ---
+        has_foto = 'foto' in cols
+        has_placa = 'placa' in cols
+        
+        col_foto = ", foto" if has_foto else ""
+        col_placa = ", placa" if has_placa else ""
+        
+        # Consulta actualizada para traer la PLACA también
+        query = f"""
+            SELECT id, radar, velocidad, fecha, hora {col_foto} {col_placa}
+            FROM historial 
+            WHERE velocidad >= 60 
+            AND fecha BETWEEN ? AND ?
+            ORDER BY fecha DESC, hora DESC
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(fecha_inicio, fecha_fin))
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error DB: {e}")
+        return pd.DataFrame()
+
+# ==========================================
+# 3. INTERFAZ Y FILTROS LATERALES
+# ==========================================
+st.title("🚨 Monitor de Infracciones Graves")
+st.markdown("---")
+
+# Sidebar para filtros
+with st.sidebar:
+    st.header("🔍 Filtros de Búsqueda")
+    
+    # Filtro de Fechas
+    hoy = datetime.now().date()
+    col1, col2 = st.columns(2)
+    f_inicio = col1.date_input("Desde", hoy - timedelta(days=7)) 
+    f_fin = col2.date_input("Hasta", hoy)
+    
+    # Carga de datos inicial con el rango seleccionado
+    df = cargar_graves(f_inicio, f_fin)
+    
+    # Filtro de Radar (dinámico)
+    radares_disponibles = ["Todos"] + sorted(list(df['radar'].unique())) if not df.empty else ["Todos"]
+    filtro_radar = st.selectbox("Seleccionar Radar:", radares_disponibles)
+    
+    # --- NUEVO: FILTRO POR PLACA ---
+    filtro_placa = st.text_input("Buscar por Placa:", "").upper()
+    
+    st.divider()
+    st.caption(f"📅 Mostrando datos del {f_inicio} al {f_fin}")
+    
+    if st.button("🔄 Actualizar Ahora", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# Aplicar filtros en memoria
+df_show = df.copy()
+if filtro_radar != "Todos":
+    df_show = df_show[df_show['radar'] == filtro_radar]
+
+if filtro_placa:
+    # Filtramos si la columna placa existe y el texto coincide
+    if 'placa' in df_show.columns:
+        df_show = df_show[df_show['placa'].str.contains(filtro_placa, na=False)]
+
+# ==========================================
+# 4. MÉTRICAS SUPERIORES (KPIs)
+# ==========================================
+if not df_show.empty:
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    
+    kpi1.metric("Total Graves", len(df_show), delta="En rango seleccionado")
+    
+    max_vel = df_show['velocidad'].max()
+    radar_max = df_show.loc[df_show['velocidad'].idxmax()]['radar']
+    kpi2.metric("Récord de Velocidad", f"{max_vel} km/h", radar_max, delta_color="inverse")
+    
+    radar_freq = df_show['radar'].mode()[0]
+    count_freq = len(df_show[df_show['radar'] == radar_freq])
+    kpi3.metric("Radar + Conflictivo", radar_freq, f"{count_freq} multas")
+
+    @st.cache_data
+    def convert_df(df):
+        return df.to_csv(index=False).encode('utf-8')
+
+    csv = convert_df(df_show)
+    kpi4.download_button(
+        label="📥 Descargar Reporte CSV",
+        data=csv,
+        file_name='infracciones_graves.csv',
+        mime='text/csv',
+    )
+    
+    st.markdown("---")
+
+# ==========================================
+# 5. GALERÍA DE TARJETAS (CON SOPORTE IA)
+# ==========================================
+if df_show.empty:
+    st.info("✅ No se encontraron infracciones graves con los filtros seleccionados.")
+else:
+    cols = st.columns(3)
+    
+    for index, row in df_show.reset_index().iterrows():
+        with cols[index % 3]:
+            with st.container(border=True):
+                # Encabezado
+                c_head1, c_head2 = st.columns([2, 1])
+                c_head1.subheader(f"⚡ {row['velocidad']} km/h")
+                c_head2.caption(f"{row['fecha']}")
+                
+                st.text(f"📍 {row['radar']} | 🕒 {row['hora']}")
+                
+                # --- MOSTRAR PLACA (CORRECCIÓN IA) ---
+                if 'placa' in row and row['placa'] not in [None, "NO_APLICA", "NO_DETECTADA", "ERROR_IA"]:
+                    st.success(f"🆔 **PLACA: {row['placa']}**")
+                else:
+                    st.warning("🆔 Placa: No identificada")
+                
+                # Imagen
+                nombre_foto = row.get('foto')
+                img_mostrada = False
+                
+                if nombre_foto:
+                    ruta_completa = os.path.join(FOTOS_DIR, nombre_foto)
+                    if os.path.exists(ruta_completa):
+                        st.image(ruta_completa, use_container_width=True)
+                        img_mostrada = True
+                
+                if not img_mostrada:
+                    st.markdown("""
+                        <div style="
+                            height: 150px; 
+                            background-color: #262730; 
+                            border-radius: 8px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: #888;
+                            border: 1px dashed #444;">
+                            📷 Sin Evidencia Visual
+                        </div>
+                    """, unsafe_allow_html=True)
+
+======================================== FIN DE ARCHIVO ========================================
