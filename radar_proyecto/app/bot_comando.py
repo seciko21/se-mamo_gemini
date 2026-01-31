@@ -51,7 +51,7 @@ def obtener_mensaje_estado(ip_servidor):
             f"├ Disponible: <b>{libre:.2f} GB</b>\n"
             f"├ Clips en memoria: <b>{len(clips)}</b>\n"
             f"└ Fotos capturadas: <b>{len(fotos)}</b>\n\n"
-            "✅ <b>ESTADO:</b> Sincronizado v3.7 (Tailscale)\n"
+            "✅ <b>ESTADO:</b> Sincronizado v5.0 (Tailscale)\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"🕒 <b>ACTUALIZADO:</b> {datetime.now().strftime('%H:%M:%S')}"
         )
@@ -193,7 +193,7 @@ def obtener_ultimos_clips():
 def obtener_manual_proyecto():
     ahora = datetime.now().strftime('%d/%m/%Y')
     return (
-        "🚀 <b>SISTEMA DE MONITOREO RADAR PRO v3.7</b>\n"
+        "🚀 <b>SISTEMA DE MONITOREO RADAR PRO v5.0</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "🛰 <b>ESTADO DEL SISTEMA:</b> <code>OPERATIVO</code>\n"
         "📅 <b>ÚLTIMA ACTUALIZACIÓN:</b> <code>" + ahora + "</code>\n\n"
