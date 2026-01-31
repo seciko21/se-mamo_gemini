@@ -268,7 +268,7 @@ def listen_bot():
                 if not txt: continue
 
                 if "/start" in txt:
-                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "🎮 <b>RADAR PRO v3.7</b>", "reply_markup": TECLADO, "parse_mode": "HTML"})
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "🎮 <b>RADAR PRO v5.0</b>", "reply_markup": TECLADO, "parse_mode": "HTML"})
 
                 elif "Reporte" in txt:
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": generar_reporte_diario(), "parse_mode": "HTML"})
