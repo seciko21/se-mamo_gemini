@@ -1,4 +1,4 @@
-import socket, time, requests, os, subprocess, threading, sqlite3, json, cv2
+import socket, time, requests, os, subprocess, threading, sqlite3, json, cv2, re
 import easyocr
 import numpy as np
 from requests.auth import HTTPDigestAuth
@@ -6,18 +6,14 @@ from datetime import datetime
 from config import *
 
 # ==========================================
-# 1. CONFIGURACIÓN DE ENTORNO Y BUFFER RAM
+# 1. CONFIGURACIÓN
 # ==========================================
 os.environ['TZ'] = 'America/Mexico_City'
-try:
-    time.tzset()
-except:
-    pass
+try: time.tzset()
+except: pass
 
-# Inicializar lector IA (Carga única en memoria)
 reader = easyocr.Reader(['es'], gpu=False)
 
-# Rutas de memoria (Buffer circular) y Disco (900GB)
 BUFFER_DIR = "/dev/shm/radar_buffer"
 BASE_DIR = "/mnt/darat"
 DB_FILE = f"{BASE_DIR}/data/cola_mensajes.db"
@@ -28,64 +24,57 @@ LOG_FILE = f"{VIDEO_PATH}velocidades.log"
 LAST_SEEN = {name: time.time() for name in RADARES} 
 RADAR_STATUS = {name: True for name in RADARES} 
 
-# Asegurar persistencia de directorios
 for ruta in [FOTOS_PATH, VIDEO_PATH, f"{BASE_DIR}/data", BUFFER_DIR]:
     os.makedirs(ruta, exist_ok=True)
 
 # ==========================================
-# 2. CAPA DE DATOS, COLA Y REINTENTOS
+# 2. CEREBRO CLAWDBOT (FILTRO PLACAS)
+# ==========================================
+def validar_placa(texto_sucio):
+    """Filtra basura y fechas. Acepta alfanuméricos de 5-8 chars."""
+    limpio = "".join(e for e in texto_sucio if e.isalnum()).upper()
+    if re.search(r'\d{8,}', limpio): return None 
+    if 5 <= len(limpio) <= 8: return limpio
+    return None
+
+# ==========================================
+# 3. BASE DE DATOS Y UTILIDADES
 # ==========================================
 def init_db():
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS cola (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        tipo TEXT, endpoint TEXT, payload TEXT,
-                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS historial (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        radar TEXT, velocidad INTEGER, 
-                        fecha DATE DEFAULT (CURRENT_DATE),
-                        hora TIME DEFAULT (CURRENT_TIME),
-                        foto TEXT, placa TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS cola (id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT, endpoint TEXT, payload TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS historial (id INTEGER PRIMARY KEY AUTOINCREMENT, radar TEXT, velocidad INTEGER, fecha DATE DEFAULT (CURRENT_DATE), hora TIME DEFAULT (CURRENT_TIME), foto TEXT, placa TEXT)''')
         conn.commit()
         conn.close()
-    except Exception as e:
-        print(f"❌ [DB] Error: {e}")
+    except: pass
 
 def registrar_historial(radar, speed, foto=None, placa=None):
     try:
         conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        f_l = datetime.now().strftime('%Y-%m-%d')
-        h_l = datetime.now().strftime('%H:%M:%S')
-        c.execute("INSERT INTO historial (radar, velocidad, fecha, hora, foto, placa) VALUES (?, ?, ?, ?, ?, ?)", 
-                  (radar, speed, f_l, h_l, foto, placa))
+        fecha, hora = datetime.now().strftime('%Y-%m-%d'), datetime.now().strftime('%H:%M:%S')
+        conn.execute("INSERT INTO historial (radar, velocidad, fecha, hora, foto, placa) VALUES (?, ?, ?, ?, ?, ?)", (radar, speed, fecha, hora, foto, placa))
         conn.commit()
         conn.close()
     except: pass
 
-def actualizar_placa_db(archivo_foto, placa):
+def enviar_seguro(metodo, params, files=None):
+    url = f"https://api.telegram.org/bot{TOKEN}/{metodo}"
     try:
-        conn = sqlite3.connect(DB_FILE)
-        conn.execute("UPDATE historial SET placa = ? WHERE foto = ?", (placa, archivo_foto))
-        conn.commit()
-        conn.close()
-    except: pass
-
-def guardar_en_cola(metodo, params):
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("INSERT INTO cola (tipo, endpoint, payload) VALUES (?, ?, ?)",
-                  (metodo, f"https://api.telegram.org/bot{TOKEN}/{metodo}", json.dumps(params)))
-        conn.commit()
-        conn.close()
-    except: pass
+        if files: return requests.post(url, data=params, files=files, timeout=25).json()
+        return requests.post(url, json=params, timeout=10).json()
+    except:
+        if metodo not in ["sendPhoto", "sendVideo"]: 
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                conn.execute("INSERT INTO cola (tipo, endpoint, payload) VALUES (?, ?, ?)", (metodo, url, json.dumps(params)))
+                conn.commit()
+                conn.close()
+            except: pass
+        return None
 
 def procesar_cola_reintentos():
-    """Hilo dedicado a reenviar mensajes fallidos (Líneas restauradas)."""
     while True:
         try:
             conn = sqlite3.connect(DB_FILE)
@@ -94,8 +83,7 @@ def procesar_cola_reintentos():
             for fila in c.fetchall():
                 bid, tipo, endpoint, p_str, fecha = fila
                 try:
-                    r = requests.post(endpoint, json=json.loads(p_str), timeout=10)
-                    if r.status_code == 200:
+                    if requests.post(endpoint, json=json.loads(p_str), timeout=10).status_code == 200:
                         c.execute("DELETE FROM cola WHERE id=?", (bid,))
                         conn.commit()
                 except: pass
@@ -103,26 +91,7 @@ def procesar_cola_reintentos():
         except: pass
         time.sleep(60)
 
-# ==========================================
-# 3. MANTENIMIENTO Y WATCHDOG
-# ==========================================
-
-
-def enviar_seguro(metodo, params, files=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/{metodo}"
-    try:
-        if files:
-            r = requests.post(url, data=params, files=files, timeout=25)
-        else:
-            r = requests.post(url, json=params, timeout=10)
-        return r.json()
-    except:
-        if metodo not in ["sendPhoto", "sendVideo"]:
-            guardar_en_cola(metodo, params)
-        return None
-
 def motor_mantenimiento():
-    """Monitorea estado de antenas y salud del disco duro."""
     while True:
         ahora = time.time()
         for nombre, last_time in LAST_SEEN.items():
@@ -133,7 +102,6 @@ def motor_mantenimiento():
             elif diff < 60 and not RADAR_STATUS[nombre]:
                 RADAR_STATUS[nombre] = True
                 enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"✅ <b>ONLINE:</b> {nombre}", "parse_mode": "HTML"})
-        
         try:
             st = os.statvfs(BASE_DIR)
             if ((st.f_blocks - st.f_bavail) / st.f_blocks) * 100 > 90:
@@ -143,72 +111,82 @@ def motor_mantenimiento():
         time.sleep(300)
 
 # ==========================================
-# 4. TRABAJO DE BUFFER CIRCULAR (RAM)
+# 4. BUFFER DE VIDEO (15s + 5s)
 # ==========================================
-
-
 def worker_buffer_continuo(nombre_radar, ip):
-    """Mantiene clips de 15 segundos frescos en RAM."""
     radar_path = os.path.join(BUFFER_DIR, nombre_radar)
     os.makedirs(radar_path, exist_ok=True)
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
-        cmd = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp",
-               "-t", "15", "-c", "copy", "-y", tmp]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "15", "-c", "copy", "-y", tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.rename(tmp, os.path.join(radar_path, "ready_15s.mp4"))
 
-# ==========================================
-# 5. IA ASÍNCRONA Y ROBUSTEZ DE VIDEO
-# ==========================================
-def hilo_ia_lpr(ruta_foto, msg_id, radar_name, speed, hora):
-    """Procesamiento de placa y edición de mensaje Telegram."""
-    try:
-        img = cv2.imread(ruta_foto)
-        if img is None: return
-        alto, ancho = img.shape[:2]
-        recorte = img[0:alto, 0:ancho // 2]
-        resultados = reader.readtext(recorte)
-        placa = "NO_DETECTADA"
-        for (bbox, text, prob) in resultados:
-            limpio = "".join(e for e in text if e.isalnum()).upper()
-            if len(limpio) >= 4:
-                placa = limpio
-                break
-        
-        actualizar_placa_db(os.path.basename(ruta_foto), placa)
-        cat, emo = ("🚀 GRAVE", "🔴") if speed >= 60 else ("⚠️ ALERTA", "🟡")
-        nuevo_cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: <b>{placa}</b>\n⏰ {hora}"
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/editMessageCaption",
-                      json={"chat_id": CHAT_ID, "message_id": msg_id, "caption": nuevo_cap, "parse_mode": "HTML"}, timeout=10)
-    except: pass
-
 def grabar_y_enviar_video_robusto(radar_name, ip, speed, caption):
-    """Concatena 15s (PASADO) + 5s (PRESENTE)."""
     ahora_s = datetime.now().strftime('%H%M%S')
     final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
     buffer_p = os.path.join(BUFFER_DIR, radar_name, "ready_15s.mp4")
     multa_post = f"/dev/shm/{radar_name}_post.mp4"
     list_f = f"/dev/shm/{radar_name}_list.txt"
-
     try:
-        cmd_post = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "5", "-c", "copy", "-y", multa_post]
-        subprocess.run(cmd_post, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "5", "-c", "copy", "-y", multa_post], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.path.exists(buffer_p):
             with open(list_f, "w") as f: f.write(f"file '{buffer_p}'\nfile '{multa_post}'\n")
-            cmd_j = ["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_f, "-c", "copy", "-y", final_p]
-            subprocess.run(cmd_j, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            os.rename(multa_post, final_p)
-
+            subprocess.run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_f, "-c", "copy", "-y", final_p], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else: os.rename(multa_post, final_p)
         if os.path.exists(final_p):
-            with open(final_p, 'rb') as v:
-                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+            with open(final_p, 'rb') as v: enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
     except: pass
 
 # ==========================================
-# 6. LÓGICA DE DETECCIÓN Y ESCUCHA
+# 5. MODO CSI: PROCESAMIENTO GRÁFICO
+# ==========================================
+def procesar_imagen_csi(ruta_foto, speed):
+    try:
+        img = cv2.imread(ruta_foto)
+        if img is None: return "ERROR_IMG"
+        
+        # 1. OCR
+        alto, ancho = img.shape[:2]
+        recorte = img[0:alto, 0:ancho // 2]
+        resultados = reader.readtext(recorte)
+        
+        placa_final = "NO_DETECTADA"
+        bbox_placa = None
+        
+        for (bbox, text, prob) in resultados:
+            candidato = validar_placa(text)
+            if candidato:
+                placa_final = candidato
+                bbox_placa = bbox
+                break
+        
+        # 2. DIBUJAR EVIDENCIA
+        if bbox_placa:
+            (tl, tr, br, bl) = bbox_placa
+            top_left = (int(tl[0]), int(tl[1]))
+            bottom_right = (int(br[0]), int(br[1]))
+            cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 3)
+            cv2.putText(img, placa_final, (top_left[0], top_left[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        # DATOS EN ESQUINA INFERIOR IZQUIERDA
+        texto_info = f"VELOCIDAD: {speed} km/h"
+        # Coordenada Y = Alto - 80 pixeles (para velocidad) y Alto - 30 (para fecha)
+        cv2.putText(img, texto_info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 5) # Sombra Negra
+        cv2.putText(img, texto_info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3) # Texto Amarillo
+        
+        fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3) # Sombra
+        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2) # Texto Blanco
+
+        cv2.imwrite(ruta_foto, img)
+        return placa_final
+        
+    except Exception as e:
+        print(f"Error CSI: {e}")
+        return "ERROR_PROC"
+
+# ==========================================
+# 6. LÓGICA DE DETECCIÓN
 # ==========================================
 def clasificar_infraccion(v):
     if v <= 54: return "🚗 PREVENTIVO", "✅"
@@ -216,11 +194,9 @@ def clasificar_infraccion(v):
     else: return "🚀 GRAVE", "🔴"
 
 def axis_overlay(ip, speed, clear=False):
-    """Muestra la velocidad en el stream de la cámara (Línea restaurada)."""
     txt = " " if clear else f"INFRACCION: {speed} km/h"
     try:
-        requests.get(f"http://{ip}/axis-cgi/overlaymanager.cgi?action=settext&text={txt.replace(' ', '+')}", 
-                     auth=HTTPDigestAuth(USER, PASS), timeout=5)
+        requests.get(f"http://{ip}/axis-cgi/overlaymanager.cgi?action=settext&text={txt.replace(' ', '+')}", auth=HTTPDigestAuth(USER, PASS), timeout=5)
         if not clear: threading.Timer(8, axis_overlay, [ip, 0, True]).start()
     except: pass
 
@@ -229,6 +205,7 @@ def procesar_deteccion(radar_name, ip, speed):
     ahora_dt = datetime.now()
     hora_s = ahora_dt.strftime('%H:%M:%S')
     archivo_foto = None
+    placa = "Procesando..."
 
     if speed >= 55:
         threading.Thread(target=axis_overlay, args=(ip, speed)).start()
@@ -238,29 +215,25 @@ def procesar_deteccion(radar_name, ip, speed):
                 archivo_foto = f"{radar_name}_{speed}_{ahora_dt.strftime('%H%M%S')}.jpg"
                 ruta_f = os.path.join(FOTOS_PATH, archivo_foto)
                 with open(ruta_f, "wb") as f: f.write(r.content)
+                placa = procesar_imagen_csi(ruta_f, speed)
         except: pass
 
-    # Registro en DB e IA
-    registrar_historial(radar_name, speed, archivo_foto, "PROCESANDO...")
+    registrar_historial(radar_name, speed, archivo_foto, placa)
     
-    # Escritura en log de texto (Línea restaurada)
     try:
         with open(LOG_FILE, "a") as f:
             f.write(f"[{ahora_dt}] {radar_name} - {speed} km/h - {cat}\n")
     except: pass
 
-    cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: ⏳ <i>Procesando...</i>\n⏰ {hora_s}"
+    cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: <b>{placa}</b>\n⏰ {hora_s}"
     
     if speed >= 55 and archivo_foto:
         with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
-            res = enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
-            if res and res.get('ok'):
-                threading.Thread(target=hilo_ia_lpr, args=(os.path.join(FOTOS_PATH, archivo_foto), res['result']['message_id'], radar_name, speed, hora_s)).start()
+            enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
         
         if speed >= 60:
             threading.Thread(target=grabar_y_enviar_video_robusto, args=(radar_name, ip, speed, cap)).start()
         
-        # Sticker Kirby para Graves (Línea restaurada)
         if speed >= 60 and 'STICKER_KIRBY' in globals():
             enviar_seguro("sendSticker", {"chat_id": CHAT_ID, "sticker": STICKER_KIRBY})
     else:
