@@ -5,9 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV TZ=America/Mexico_City
 
 # 1. Dependencias mínimas de sistema
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl sqlite3 libgl1 libglib2.0-0 tzdata \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends     ffmpeg curl sqlite3 libgl1 libglib2.0-0 tzdata     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -18,13 +16,13 @@ RUN pip install --no-cache-dir --upgrade pip
 # Esto evita que easyocr intente bajar la versión de 5GB de NVIDIA.
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-# PASO 2: Instalar el resto de librerías
-RUN pip install --no-cache-dir \
-    requests urllib3 pandas opencv-python-headless easyocr
+# PASO 2: Instalar el resto de librerías (AGREGADO: ultralytics)
+RUN pip install --no-cache-dir     requests urllib3 pandas opencv-python-headless easyocr ultralytics
 
 # 3. PRE-DESCARGA DEL MODELO (Solo si el disco lo permite)
 RUN python3 -c "import easyocr; reader = easyocr.Reader(['es'], gpu=False)"
 
 COPY . .
 
-CMD ["python3"]
+# Actualizamos el CMD para que arranque el monitor automáticamente
+CMD ["python3", "app/monitor_radar.py"]

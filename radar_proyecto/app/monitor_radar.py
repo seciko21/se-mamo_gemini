@@ -1,9 +1,11 @@
 import socket, time, requests, os, subprocess, threading, sqlite3, json, cv2, re
 import easyocr
-import numpy as np
+import logging
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from config import *
+# --- NUEVO: CEREBRO YOLO ---
+from ultralytics import YOLO
 
 # ==========================================
 # 1. CONFIGURACIÓN
@@ -12,7 +14,14 @@ os.environ['TZ'] = 'America/Mexico_City'
 try: time.tzset()
 except: pass
 
+# Suprimir logs de YOLO para mantener la consola limpia
+logging.getLogger("ultralytics").setLevel(logging.ERROR)
+
+# Carga de Modelos
+print("🧠 Cargando OCR...")
 reader = easyocr.Reader(['es'], gpu=False)
+print("👁️ Cargando YOLO AI...")
+model_ai = YOLO('yolov8n.pt') # Modelo Nano (Rápido y Ligero)
 
 BUFFER_DIR = "/dev/shm/radar_buffer"
 BASE_DIR = "/mnt/darat"
@@ -31,7 +40,6 @@ for ruta in [FOTOS_PATH, VIDEO_PATH, f"{BASE_DIR}/data", BUFFER_DIR]:
 # 2. CEREBRO CLAWDBOT (FILTRO PLACAS)
 # ==========================================
 def validar_placa(texto_sucio):
-    """Filtra basura y fechas. Acepta alfanuméricos de 5-8 chars."""
     limpio = "".join(e for e in texto_sucio if e.isalnum()).upper()
     if re.search(r'\d{8,}', limpio): return None 
     if 5 <= len(limpio) <= 8: return limpio
@@ -138,29 +146,57 @@ def grabar_y_enviar_video_robusto(radar_name, ip, speed, caption):
     except: pass
 
 # ==========================================
-# 5. MODO CSI: PROCESAMIENTO GRÁFICO
+# 5. MODO CSI + CLASIFICACIÓN IA (YOLO)
 # ==========================================
+def clasificar_vehiculo(img):
+    """
+    Usa YOLO para detectar qué tipo de vehículo es.
+    Retorna: Icono y Nombre (Ej: '🚛 Camión')
+    """
+    try:
+        # Clases COCO: 2=car, 3=motorcycle, 5=bus, 7=truck
+        results = model_ai(img)
+        
+        # Buscamos la detección con mayor confianza
+        mejor_conf = 0
+        tipo = "🚗 Vehículo" # Default
+        
+        for r in results:
+            for box in r.boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                
+                if conf > mejor_conf and conf > 0.4: # Umbral confianza 40%
+                    mejor_conf = conf
+                    if cls_id == 2: tipo = "🚗 Automóvil"
+                    elif cls_id == 3: tipo = "🏍️ Motocicleta"
+                    elif cls_id == 5: tipo = "🚌 Autobús"
+                    elif cls_id == 7: tipo = "🚛 Camión"
+                    
+        return tipo
+    except:
+        return "🚗 Vehículo (AI Error)"
+
 def procesar_imagen_csi(ruta_foto, speed):
     try:
         img = cv2.imread(ruta_foto)
-        if img is None: return "ERROR_IMG"
+        if img is None: return "ERROR_IMG", "🚗 Indefinido"
         
-        # 1. OCR
+        # A) CLASIFICACIÓN DE VEHÍCULO (YOLO)
+        tipo_vehiculo = clasificar_vehiculo(img)
+        
+        # B) LECTURA DE PLACA (OCR)
         alto, ancho = img.shape[:2]
         recorte = img[0:alto, 0:ancho // 2]
         resultados = reader.readtext(recorte)
-        
         placa_final = "NO_DETECTADA"
         bbox_placa = None
-        
         for (bbox, text, prob) in resultados:
             candidato = validar_placa(text)
             if candidato:
-                placa_final = candidato
-                bbox_placa = bbox
-                break
+                placa_final = candidato; bbox_placa = bbox; break
         
-        # 2. DIBUJAR EVIDENCIA
+        # C) DIBUJAR EVIDENCIA
         if bbox_placa:
             (tl, tr, br, bl) = bbox_placa
             top_left = (int(tl[0]), int(tl[1]))
@@ -168,30 +204,29 @@ def procesar_imagen_csi(ruta_foto, speed):
             cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 3)
             cv2.putText(img, placa_final, (top_left[0], top_left[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-        # DATOS EN ESQUINA INFERIOR IZQUIERDA
-        texto_info = f"VELOCIDAD: {speed} km/h"
-        # Coordenada Y = Alto - 80 pixeles (para velocidad) y Alto - 30 (para fecha)
-        cv2.putText(img, texto_info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 5) # Sombra Negra
-        cv2.putText(img, texto_info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3) # Texto Amarillo
+        # Texto Inferior
+        info = f"VEL: {speed} km/h"
+        cv2.putText(img, info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 5) 
+        cv2.putText(img, info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3) 
         
         fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3) # Sombra
-        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2) # Texto Blanco
+        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3) 
+        cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2) 
 
         cv2.imwrite(ruta_foto, img)
-        return placa_final
+        return placa_final, tipo_vehiculo
         
     except Exception as e:
         print(f"Error CSI: {e}")
-        return "ERROR_PROC"
+        return "ERROR_PROC", "🚗 Indefinido"
 
 # ==========================================
 # 6. LÓGICA DE DETECCIÓN
 # ==========================================
 def clasificar_infraccion(v):
-    if v <= 54: return "🚗 PREVENTIVO", "✅"
-    elif 55 <= v <= 59: return "⚠️ ALERTA", "🟡"
-    else: return "🚀 GRAVE", "🔴"
+    if v <= 54: return "PREVENTIVO", "✅"
+    elif 55 <= v <= 59: return "ALERTA", "🟡"
+    else: return "GRAVE", "🔴"
 
 def axis_overlay(ip, speed, clear=False):
     txt = " " if clear else f"INFRACCION: {speed} km/h"
@@ -206,6 +241,7 @@ def procesar_deteccion(radar_name, ip, speed):
     hora_s = ahora_dt.strftime('%H:%M:%S')
     archivo_foto = None
     placa = "Procesando..."
+    vehiculo = "🚗 Analizando..." # Placeholder
 
     if speed >= 55:
         threading.Thread(target=axis_overlay, args=(ip, speed)).start()
@@ -215,17 +251,19 @@ def procesar_deteccion(radar_name, ip, speed):
                 archivo_foto = f"{radar_name}_{speed}_{ahora_dt.strftime('%H%M%S')}.jpg"
                 ruta_f = os.path.join(FOTOS_PATH, archivo_foto)
                 with open(ruta_f, "wb") as f: f.write(r.content)
-                placa = procesar_imagen_csi(ruta_f, speed)
+                # LLAMAMOS A LA NUEVA FUNCIÓN QUE DEVUELVE 2 VALORES
+                placa, vehiculo = procesar_imagen_csi(ruta_f, speed)
         except: pass
 
     registrar_historial(radar_name, speed, archivo_foto, placa)
     
     try:
         with open(LOG_FILE, "a") as f:
-            f.write(f"[{ahora_dt}] {radar_name} - {speed} km/h - {cat}\n")
+            f.write(f"[{ahora_dt}] {radar_name} - {speed} km/h - {cat} - {vehiculo}\n")
     except: pass
 
-    cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: <b>{placa}</b>\n⏰ {hora_s}"
+    # ESTRUCTURA DEL MENSAJE ACTUALIZADA CON TIPO DE VEHÍCULO
+    cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n🚘 Tipo: <b>{vehiculo}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: <b>{placa}</b>\n⏰ {hora_s}"
     
     if speed >= 55 and archivo_foto:
         with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
