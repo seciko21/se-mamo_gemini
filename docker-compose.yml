@@ -1,17 +1,21 @@
 version: '3.8'
 
 services:
-  # 1. EL MONITOR
+  # 1. EL MONITOR (Motor principal)
   radar-monitor:
     build: ./radar_proyecto
     container_name: radar_monitor
-    network_mode: "host" # Mantenemos host para que escuche el tráfico de red
+    network_mode: "host"
     restart: always
+    # --- LÍNEAS CRÍTICAS PARA VIDEO ROBUSTO ---
+    shm_size: '512mb' # Evita que FFmpeg se bloquee por falta de memoria RAM compartida
     volumes:
       - /mnt/darat:/mnt/darat
+      - /dev/shm:/dev/shm # Permite que el host vea los buffers de 15s creados en RAM
+    # ------------------------------------------
     command: python3 app/monitor_radar.py
 
-  # 2. EL BOT
+  # 2. EL BOT (Comandos y alertas)
   radar-bot:
     build: ./radar_proyecto
     container_name: radar_bot
@@ -31,16 +35,15 @@ services:
     restart: always
     environment:
       - TUNNEL_TOKEN=eyJhIjoiMDk0YmJhYzIzMTBjNTRhMWJhNjcwN2ZlYjNkNjM2MzAiLCJ0IjoiNTk4NDcxMGEtOGUxYS00ZWE4LTg4MjAtNDk5NTIwMGQ3ZjFlIiwicyI6Ik56TTJaV1F5TmpVdE5Ea3pNaTAwTWpRd0xXRm1ORGN0TkdGaE5USTJOelU0Tm1ZMCJ9
-    # Forzamos a que busque en IPv4 (127.0.0.1) para evitar el error [::1]
     command: tunnel --no-autoupdate run --url http://127.0.0.1:8085
 
-  # 4. EL DASHBOARD (Quitamos host mode para que el mapeo de puertos FUNCIONE)
+  # 4. EL DASHBOARD (Web)
   radar-dashboard:
     build: ./radar_web
     container_name: radar_dashboard
     restart: always
     ports:
-      - "8085:8501" # Ahora sí: el host verá el 8085 y lo mandará al 8501 del contenedor
+      - "8085:8501"
     volumes:
       - /mnt/darat/data:/app/data_folder
       - /mnt/darat/clips:/app/clips:ro
