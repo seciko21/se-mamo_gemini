@@ -6,21 +6,22 @@ from datetime import datetime
 from config import *
 
 # ==========================================
-# CORRECCIÓN DE HORA Y CONFIGURACIÓN IA
+# 1. CONFIGURACIÓN DE ENTORNO Y BUFFER RAM
 # ==========================================
 os.environ['TZ'] = 'America/Mexico_City'
 try:
     time.tzset()
-    print(f"✅ [RELOJ] Hora local sincronizada: {datetime.now()}")
 except:
     pass
 
 # Inicializar lector IA (Se carga una vez en memoria)
 reader = easyocr.Reader(['es'], gpu=False)
 
-# ==========================================
-# 1. ESTADO Y VARIABLES GLOBALES (RUTAS CORREGIDAS)
-# ==========================================
+# Rutas en RAM para el buffer (Evita desgaste del disco duro)
+BUFFER_DIR = "/dev/shm/radar_buffer"
+os.makedirs(BUFFER_DIR, exist_ok=True)
+
+# Rutas en Disco 900GB
 BASE_DIR = "/mnt/darat"
 DB_FILE = f"{BASE_DIR}/data/cola_mensajes.db"
 FOTOS_PATH = "/mnt/darat/multas_fotos/"
@@ -28,15 +29,14 @@ VIDEO_PATH = "/mnt/darat/clips/"
 LOG_FILE = f"{VIDEO_PATH}velocidades.log"
 
 LAST_SEEN = {name: time.time() for name in RADARES} 
-RADAR_STATUS = {name: True for name in RADARES}     
+RADAR_STATUS = {name: True for name in RADARES} 
 
-# Asegurar que las carpetas existan en el nuevo disco
+# Asegurar directorios
 for ruta in [FOTOS_PATH, VIDEO_PATH, f"{BASE_DIR}/data"]:
-    if not os.path.exists(ruta):
-        os.makedirs(ruta, exist_ok=True)
+    os.makedirs(ruta, exist_ok=True)
 
 # ==========================================
-# 2. CAPA DE DATOS (SQLite / IA / Cola)
+# 2. CAPA DE DATOS Y COLA DE REINTENTOS
 # ==========================================
 def init_db():
     try:
@@ -46,37 +46,36 @@ def init_db():
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tipo TEXT, endpoint TEXT, payload TEXT,
                         fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        
         c.execute('''CREATE TABLE IF NOT EXISTS historial (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        radar TEXT, 
-                        velocidad INTEGER, 
+                        radar TEXT, velocidad INTEGER, 
                         fecha DATE DEFAULT (CURRENT_DATE),
                         hora TIME DEFAULT (CURRENT_TIME),
-                        foto TEXT,
-                        placa TEXT)''')
-        
+                        foto TEXT, placa TEXT)''')
         conn.commit()
         conn.close()
-        print(f"✅ [DB] Estructura lista en: {DB_FILE}")
     except Exception as e:
         print(f"❌ [DB] Error: {e}")
 
 def registrar_historial(radar, speed, foto=None, placa=None):
-    """Guarda detección incluyendo evidencia visual y lectura de IA."""
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        fecha_local = datetime.now().strftime('%Y-%m-%d')
-        hora_local = datetime.now().strftime('%H:%M:%S')
-        
+        fecha_l = datetime.now().strftime('%Y-%m-%d')
+        hora_l = datetime.now().strftime('%H:%M:%S')
         c.execute("INSERT INTO historial (radar, velocidad, fecha, hora, foto, placa) VALUES (?, ?, ?, ?, ?, ?)", 
-                  (radar, speed, fecha_local, hora_local, foto, placa))
-
+                  (radar, speed, fecha_l, hora_l, foto, placa))
         conn.commit()
         conn.close()
-    except Exception as e:
-        print(f"❌ [DB] Error al registrar historial: {e}")
+    except: pass
+
+def actualizar_placa_db(archivo_foto, placa):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute("UPDATE historial SET placa = ? WHERE foto = ?", (placa, archivo_foto))
+        conn.commit()
+        conn.close()
+    except: pass
 
 def guardar_en_cola(metodo, params):
     try:
@@ -107,31 +106,7 @@ def procesar_cola_reintentos():
         time.sleep(60)
 
 # ==========================================
-# 3. MOTOR DE INTELIGENCIA ARTIFICIAL (LPR)
-# ==========================================
-def procesar_lpr(ruta_foto):
-    """Analiza únicamente la MITAD IZQUIERDA de la imagen para extraer la placa."""
-    try:
-        img = cv2.imread(ruta_foto)
-        if img is None: return "ERROR_IMAGEN"
-        
-        alto, ancho = img.shape[:2]
-        recorte = img[0:alto, 0:ancho // 2]
-        
-        resultados = reader.readtext(recorte)
-        
-        for (bbox, text, prob) in resultados:
-            limpio = "".join(e for e in text if e.isalnum()).upper()
-            if len(limpio) >= 4:
-                print(f"🔎 [IA] Placa detectada (IZQ): {limpio} ({int(prob*100)}% conf)")
-                return limpio
-        return "NO_DETECTADA"
-    except Exception as e:
-        print(f"⚠️ [IA] Error en OCR: {e}")
-        return "ERROR_IA"
-
-# ==========================================
-# 4. COMUNICACIÓN Y MANTENIMIENTO
+# 3. MANTENIMIENTO Y WATCHDOG
 # ==========================================
 def enviar_seguro(metodo, params, files=None):
     url = f"https://api.telegram.org/bot{TOKEN}/{metodo}"
@@ -140,13 +115,13 @@ def enviar_seguro(metodo, params, files=None):
             r = requests.post(url, data=params, files=files, timeout=25)
         else:
             r = requests.post(url, json=params, timeout=10)
-        r.raise_for_status()
+        return r.json()
     except:
         if metodo not in ["sendPhoto", "sendVideo"]:
             guardar_en_cola(metodo, params)
+        return None
 
 def motor_mantenimiento():
-    print("🕵️ [SISTEMA] Watchdog y Auto-limpieza activos.")
     while True:
         ahora = time.time()
         for nombre, last_time in LAST_SEEN.items():
@@ -168,85 +143,115 @@ def motor_mantenimiento():
         time.sleep(300)
 
 # ==========================================
-# 5. LÓGICA DE DETECCIÓN Y MULTIMEDIA
+# 4. TRABAJO DE BUFFER CIRCULAR (RAM)
 # ==========================================
-def clasificar_infraccion(velocidad):
-    if velocidad <= 54: return "🚗 PREVENTIVO", "✅"
-    elif 55 <= velocidad <= 59: return "⚠️ ALERTA", "🟡"
+
+def worker_buffer_continuo(nombre_radar, ip):
+    """Mantiene clips de 15 segundos frescos en RAM."""
+    radar_path = os.path.join(BUFFER_DIR, nombre_radar)
+    os.makedirs(radar_path, exist_ok=True)
+    while True:
+        tmp = os.path.join(radar_path, "buffer_raw.mp4")
+        # Cambio: de 5 a 15 segundos de pre-grabación
+        cmd = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp",
+               "-t", "15", "-c", "copy", "-y", tmp]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.rename(tmp, os.path.join(radar_path, "ready_15s.mp4"))
+
+# ==========================================
+# 5. IA Y ROBUSTEZ DE VIDEO (Asíncrono)
+# ==========================================
+def hilo_ia_lpr(ruta_foto, msg_id, radar_name, speed, hora):
+    try:
+        img = cv2.imread(ruta_foto)
+        if img is None: return
+        alto, ancho = img.shape[:2]
+        recorte = img[0:alto, 0:ancho // 2]
+        resultados = reader.readtext(recorte)
+        placa = "NO_DETECTADA"
+        for (bbox, text, prob) in resultados:
+            limpio = "".join(e for e in text if e.isalnum()).upper()
+            if len(limpio) >= 4:
+                placa = limpio
+                break
+        
+        actualizar_placa_db(os.path.basename(ruta_foto), placa)
+        cat, emo = clasificar_infraccion(speed)
+        nuevo_cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: <b>{placa}</b>\n⏰ {hora}"
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/editMessageCaption",
+                      json={"chat_id": CHAT_ID, "message_id": msg_id, "caption": nuevo_cap, "parse_mode": "HTML"}, timeout=10)
+    except: pass
+
+def grabar_y_enviar_video_robusto(radar_name, ip, speed, caption):
+    ahora_s = datetime.now().strftime('%H%M%S')
+    final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
+    buffer_p = os.path.join(BUFFER_DIR, radar_name, "ready_15s.mp4")
+    multa_post = f"/dev/shm/{radar_name}_post.mp4"
+    list_f = f"/dev/shm/{radar_name}_list.txt"
+
+    try:
+        # Cambio: de 15 a 5 segundos de grabación posterior
+        cmd_post = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "5", "-c", "copy", "-y", multa_post]
+        subprocess.run(cmd_post, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if os.path.exists(buffer_p):
+            with open(list_f, "w") as f: f.write(f"file '{buffer_p}'\nfile '{multa_post}'\n")
+            cmd_j = ["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_f, "-c", "copy", "-y", final_p]
+            subprocess.run(cmd_j, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.rename(multa_post, final_p)
+
+        if os.path.exists(final_p):
+            with open(final_p, 'rb') as v:
+                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+    except: pass
+
+# ==========================================
+# 6. LÓGICA DE DETECCIÓN FINAL
+# ==========================================
+def clasificar_infraccion(v):
+    if v <= 54: return "🚗 PREVENTIVO", "✅"
+    elif 55 <= v <= 59: return "⚠️ ALERTA", "🟡"
     else: return "🚀 GRAVE", "🔴"
 
 def axis_overlay(ip, speed, clear=False):
     txt = " " if clear else f"INFRACCION: {speed} km/h"
     try:
         requests.get(f"http://{ip}/axis-cgi/overlaymanager.cgi?action=settext&text={txt.replace(' ', '+')}", 
-                      auth=HTTPDigestAuth(USER, PASS), timeout=5)
+                     auth=HTTPDigestAuth(USER, PASS), timeout=5)
         if not clear: threading.Timer(8, axis_overlay, [ip, 0, True]).start()
     except: pass
 
-def grabar_y_enviar_video(ip, speed, caption):
-    ahora_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    fname = f"{VIDEO_PATH}inf_{speed}_{ahora_str}.mp4"
-    comando = ["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "15", "-c", "copy", "-y", fname]
-    try:
-        subprocess.run(comando, check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(fname) and os.path.getsize(fname) > 100000:
-            with open(fname, 'rb') as v:
-                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
-    except: pass
-
 def procesar_deteccion(radar_name, ip, speed):
-    categoria, emoji = clasificar_infraccion(speed)
+    cat, emo = clasificar_infraccion(speed)
     ahora_dt = datetime.now()
-    ahora_str = ahora_dt.strftime('%H:%M:%S')
-    
+    hora_s = ahora_dt.strftime('%H:%M:%S')
     archivo_foto = None
-    texto_placa = "NO_APLICA"
 
     if speed >= 55:
-        axis_overlay(ip, speed)
+        threading.Thread(target=axis_overlay, args=(ip, speed)).start()
         try:
-            r = requests.get(f"http://{ip}/axis-cgi/jpg/image.cgi", auth=HTTPDigestAuth(USER, PASS), timeout=15)
+            r = requests.get(f"http://{ip}/axis-cgi/jpg/image.cgi", auth=HTTPDigestAuth(USER, PASS), timeout=10)
             if r.status_code == 200:
-                archivo_foto = f"{radar_name}_{speed}_{ahora_dt.strftime('%Y%m%d_%H%M%S')}.jpg"
-                ruta_completa = os.path.join(FOTOS_PATH, archivo_foto)
-                with open(ruta_completa, "wb") as f:
-                    f.write(r.content)
-                
-                # IA procesando solo la mitad izquierda del archivo guardado
-                texto_placa = procesar_lpr(ruta_completa)
-        except Exception as e:
-            print(f"⚠️ Error capturando foto/IA: {e}")
+                archivo_foto = f"{radar_name}_{speed}_{ahora_dt.strftime('%H%M%S')}.jpg"
+                ruta_f = os.path.join(FOTOS_PATH, archivo_foto)
+                with open(ruta_f, "wb") as f: f.write(r.content)
+        except: pass
 
-    # Registrar siempre en historial (IA + DB)
-    registrar_historial(radar_name, speed, archivo_foto, texto_placa)
-
-    # --- DOBLE ESCRITURA: LOG DE TEXTO PARA TAIL -F ---
-    try:
-        log_line = f"[{ahora_dt}] {radar_name} - {speed} km/h - {categoria}\n"
-        with open(LOG_FILE, "a") as f:
-            f.write(log_line)
-    except:
-        pass
+    registrar_historial(radar_name, speed, archivo_foto, "PROCESANDO...")
     
-    placa_txt = f"\n📄 Placa: <b>{texto_placa}</b>" if texto_placa not in ["NO_APLICA", "NO_DETECTADA"] else ""
-    caption = f"{emoji} <b>{categoria}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n⏰ Hora: {ahora_str}{placa_txt}"
+    cap = f"{emo} <b>{cat}</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n📄 Placa: ⏳ <i>Procesando...</i>\n⏰ {hora_s}"
     
-    if speed >= 55:
-        # Video solo para Graves (>=60)
-        if speed >= 60: threading.Thread(target=grabar_y_enviar_video, args=(ip, speed, caption)).start()
+    if speed >= 55 and archivo_foto:
+        with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
+            res = enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
+            if res and res.get('ok'):
+                threading.Thread(target=hilo_ia_lpr, args=(os.path.join(FOTOS_PATH, archivo_foto), res['result']['message_id'], radar_name, speed, hora_s)).start()
         
-        # Enviar foto capturada
-        if archivo_foto:
-            ruta_completa = os.path.join(FOTOS_PATH, archivo_foto)
-            with open(ruta_completa, 'rb') as p:
-                enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'photo': p})
-        
-        # Sticker Kirby solo para Graves
-        if speed >= 60 and 'STICKER_KIRBY' in globals():
-            enviar_seguro("sendSticker", {"chat_id": CHAT_ID, "sticker": STICKER_KIRBY})
+        if speed >= 60:
+            threading.Thread(target=grabar_y_enviar_video_robusto, args=(radar_name, ip, speed, cap)).start()
     else:
-        # Preventivos: Solo texto
-        enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": caption, "parse_mode": "HTML"})
+        enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": cap, "parse_mode": "HTML"})
 
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
@@ -261,8 +266,7 @@ def escuchar_radar(nombre, ip, puerto):
                 speed = 0
                 if b'\xfc\xfa' in data: speed = data[data.find(b'\xfc\xfa') + 2]
                 elif b'\xfb\xfd' in data: speed = data[data.find(b'\xfb\xfd') + 2]
-                if speed >= 1: 
-                    threading.Thread(target=procesar_deteccion, args=(nombre, ip, speed)).start()
+                if speed >= 1: threading.Thread(target=procesar_deteccion, args=(nombre, ip, speed)).start()
         except: time.sleep(10)
 
 if __name__ == "__main__":
@@ -270,5 +274,6 @@ if __name__ == "__main__":
     threading.Thread(target=procesar_cola_reintentos, daemon=True).start()
     threading.Thread(target=motor_mantenimiento, daemon=True).start()
     for n, d in RADARES.items():
+        threading.Thread(target=worker_buffer_continuo, args=(n, d['ip']), daemon=True).start()
         threading.Thread(target=escuchar_radar, args=(n, d['ip'], d['puerto']), daemon=True).start()
     while True: time.sleep(1)
