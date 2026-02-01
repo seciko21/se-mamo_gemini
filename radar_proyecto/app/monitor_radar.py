@@ -8,19 +8,16 @@ from config import *
 from ultralytics import YOLO
 
 # ==========================================
-# 1. CONFIGURACIÓN Y ENTORNO
+# 1. ENTORNO Y CARGA DE MODELOS (IA)
 # ==========================================
 os.environ['TZ'] = 'America/Mexico_City'
-try:
-    time.tzset()
-except:
-    pass
+try: time.tzset()
+except: pass
 
 logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
-print("🧠 Cargando OCR...")
+print("🧠 Cargando Motores Clawdbot (YOLO + OCR)...")
 reader = easyocr.Reader(['es'], gpu=False)
-print("👁️ Cargando YOLO AI...")
 model_ai = YOLO('yolov8n.pt') 
 
 BUFFER_DIR = "/dev/shm/radar_buffer"
@@ -64,7 +61,7 @@ def clasificar_vehiculo(img):
     except: return "🚗 Vehículo"
 
 # ==========================================
-# 3. BASE DE DATOS Y MENSAJERÍA SEGURA
+# 3. BASE DE DATOS Y RESILIENCIA (Líneas Críticas)
 # ==========================================
 def init_db():
     try:
@@ -117,31 +114,46 @@ def procesar_cola_reintentos():
         except: pass
         time.sleep(60)
 
+def motor_mantenimiento():
+    while True:
+        ahora = time.time()
+        for nombre, last_time in LAST_SEEN.items():
+            diff = ahora - last_time
+            if diff > 3600 and RADAR_STATUS[nombre]:
+                RADAR_STATUS[nombre] = False
+                enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"🚨 <b>OFFLINE:</b> {nombre}", "parse_mode": "HTML"})
+            elif diff < 60 and not RADAR_STATUS[nombre]:
+                RADAR_STATUS[nombre] = True
+                enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"✅ <b>ONLINE:</b> {nombre}", "parse_mode": "HTML"})
+        try:
+            st = os.statvfs(BASE_DIR)
+            if ((st.f_blocks - st.f_bavail) / st.f_blocks) * 100 > 90:
+                archivos = sorted([os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH)], key=os.path.getmtime)
+                for i in range(min(20, len(archivos))): os.remove(archivos[i])
+        except: pass
+        time.sleep(300)
+
 # ==========================================
-# 4. GESTIÓN DE VIDEO (BUFFER 20s)
+# 4. GESTIÓN DE VIDEO (INSTANTÁNEA 30s)
 # ==========================================
 def worker_buffer_continuo(nombre_radar, ip):
     radar_path = os.path.join(BUFFER_DIR, nombre_radar)
     os.makedirs(radar_path, exist_ok=True)
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
-        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "20", "-c", "copy", "-y", tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        os.rename(tmp, os.path.join(radar_path, "ready_20s.mp4"))
+        # Buffer de 30 segundos (Caja Negra)
+        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "30", "-c", "copy", "-y", tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.rename(tmp, os.path.join(radar_path, "evidencia_30s.mp4"))
 
-def grabar_y_enviar_video_robusto(radar_name, ip, speed, caption):
+def enviar_video_instantaneo(radar_name, speed, caption):
     ahora_s = datetime.now().strftime('%H%M%S')
     final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
-    buffer_p = os.path.join(BUFFER_DIR, radar_name, "ready_20s.mp4")
-    multa_post = f"/dev/shm/{radar_name}_post.mp4"
-    list_f = f"/dev/shm/{radar_name}_list.txt"
+    buffer_p = os.path.join(BUFFER_DIR, radar_name, "evidencia_30s.mp4")
     try:
-        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "5", "-c", "copy", "-y", multa_post], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.path.exists(buffer_p):
-            with open(list_f, "w") as f: f.write(f"file '{buffer_p}'\nfile '{multa_post}'\n")
-            subprocess.run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_f, "-c", "copy", "-y", final_p], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else: os.rename(multa_post, final_p)
-        if os.path.exists(final_p):
-            with open(final_p, 'rb') as v: enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+            subprocess.run(["cp", buffer_p, final_p])
+            with open(final_p, 'rb') as v: 
+                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
     except: pass
 
 # ==========================================
@@ -151,7 +163,6 @@ def procesar_imagen_csi(ruta_foto, speed):
     try:
         img = cv2.imread(ruta_foto)
         if img is None: return "ERROR_IMG", "🚗 Indefinido"
-        
         tipo_vehiculo = clasificar_vehiculo(img)
         alto, ancho = img.shape[:2]
         recorte = img[0:alto, 0:ancho // 2]
@@ -161,31 +172,28 @@ def procesar_imagen_csi(ruta_foto, speed):
             candidato = validar_placa(text)
             if candidato:
                 placa_final = candidato; bbox_placa = bbox; break
-        
         if bbox_placa:
             p1 = (int(bbox_placa[0][0]), int(bbox_placa[0][1]))
             p2 = (int(bbox_placa[2][0]), int(bbox_placa[2][1]))
             cv2.rectangle(img, p1, p2, (0, 255, 0), 3)
             cv2.putText(img, placa_final, (p1[0], p1[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
         info = f"VEL: {speed} km/h"
         cv2.putText(img, info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 5) 
         cv2.putText(img, info, (30, alto - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3) 
-        
         fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3) 
         cv2.putText(img, fecha_str, (30, alto - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2) 
-
         cv2.imwrite(ruta_foto, img)
         return placa_final, tipo_vehiculo
     except: return "ERROR_PROC", "🚗 Indefinido"
 
 # ==========================================
-# 6. LÓGICA DE DETECCIÓN (SIN OVERLAY)
+# 6. LÓGICA DE DETECCIÓN ACELERADA
 # ==========================================
 def procesar_deteccion(radar_name, ip, speed):
     ahora_dt = datetime.now()
     hora_s = ahora_dt.strftime('%H:%M:%S')
+    LAST_SEEN[radar_name] = time.time() # Actualizamos actividad
     
     if speed <= 54:
         registrar_historial(radar_name, speed, None, "OMITIDO")
@@ -196,7 +204,6 @@ def procesar_deteccion(radar_name, ip, speed):
     cat, emo = ("GRAVE", "🔴") if speed >= 60 else ("ALERTA", "🟡")
     archivo_foto, placa, vehiculo = None, "Analizando...", "🚗 Analizando..."
 
-    # Quitamos el overlay de la cámara para no saturar HTTP y dejar la imagen limpia
     try:
         r = requests.get(f"http://{ip}/axis-cgi/jpg/image.cgi", auth=HTTPDigestAuth(USER, PASS), timeout=10)
         if r.status_code == 200:
@@ -212,8 +219,9 @@ def procesar_deteccion(radar_name, ip, speed):
     if archivo_foto:
         with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
             enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
+        # ENVÍO INSTANTÁNEO DE VIDEO
         if speed >= 60:
-            threading.Thread(target=grabar_y_enviar_video_robusto, args=(radar_name, ip, speed, cap)).start()
+            threading.Thread(target=enviar_video_instantaneo, args=(radar_name, speed, cap)).start()
 
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
@@ -224,7 +232,6 @@ def escuchar_radar(nombre, ip, puerto):
             while True:
                 data = s.recv(1024)
                 if not data: break
-                LAST_SEEN[nombre] = time.time()
                 v = 0
                 if b'\xfc\xfa' in data: v = data[data.find(b'\xfc\xfa') + 2]
                 elif b'\xfb\xfd' in data: v = data[data.find(b'\xfb\xfd') + 2]
@@ -234,6 +241,7 @@ def escuchar_radar(nombre, ip, puerto):
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=procesar_cola_reintentos, daemon=True).start()
+    threading.Thread(target=motor_mantenimiento, daemon=True).start()
     for n, d in RADARES.items():
         threading.Thread(target=worker_buffer_continuo, args=(n, d['ip']), daemon=True).start()
         threading.Thread(target=escuchar_radar, args=(n, d['ip'], d['puerto']), daemon=True).start()
