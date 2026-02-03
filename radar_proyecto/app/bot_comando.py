@@ -21,7 +21,7 @@ URL_DASHBOARD = os.getenv("URL_PUBLICO", "http://localhost:8501")
 # --- ZONA DE PERSONALIZACIÓN ---
 # PASO 1: Envía tu sticker favorito al bot por Telegram.
 # PASO 2: El bot te responderá con el ID. Copialo y pegalo aquí abajo.
-STICKER_ROCKET = "CAACAgIAAxkBAAEQaN5pgUyrg7oYGh4H2oAEarPqApF9kgAC9QAD9wLID0dGmGHRUMixOAQ" 
+STICKER_ROCKET = "CAACAgIAAyEFAATOYvOMAAEGAuBpgU69jcRT0NOoYVshFUdDUfBqdQACPwAD29t-AAH05pw4AeSqaTgE"#"CAACAgIAAxkBAAEQaN5pgUyrg7oYGh4H2oAEarPqApF9kgAC9QAD9wLID0dGmGHRUMixOAQ" 
 
 try:
     from monitor_radar import reader, model_ai, validar_placa
