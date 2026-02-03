@@ -21,7 +21,11 @@ services:
       # Carpeta de las páginas (donde vive Infracciones_Graves.py)
       - ./pages:/app/pages
       
-      # --- CORRECCIÓN DE RUTA DE FOTOS ---
-      # Conectamos la carpeta física de 900GB a la carpeta interna que lee Streamlit
+      # Mapeo antiguo (Lo mantenemos por si acaso usas 'imagenes_multas' en otro lado)
       - /mnt/darat/multas_fotos:/app/imagenes_multas
+
+      # --- NUEVA LÍNEA NECESARIA ---
+      # Esto permite que el dashboard encuentre la ruta '/mnt/darat/multas_fotos/'
+      - /mnt/darat:/mnt/darat
+
     restart: always

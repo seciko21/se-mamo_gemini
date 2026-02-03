@@ -6,14 +6,19 @@ import plotly.express as px
 from datetime import datetime, date, timedelta
 import io
 import time
+import glob
 
 # ==========================================
-# CONFIGURACIÓN DE TIEMPO (AJUSTE MANUAL SEGURO)
+# CONFIGURACIÓN DE TIEMPO
 # ==========================================
 OFFSET_HORAS = -0
 
+# RUTAS DE DATOS (Ajustadas al entorno Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'
 CLIPS_DIR = "/app/clips/"
+
+# RUTA DE FOTOS (Usamos la ruta interna que ya comprobamos que funciona)
+FOTOS_PATH = "/app/imagenes_multas/" 
 
 USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
 LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
@@ -21,7 +26,7 @@ LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
 pd.set_option("styler.render.max_elements", 1000000)
 st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
 
-# --- MEJORA: LÓGICA DE BIENVENIDA SE-MAMO_GEMINI ---
+# --- LÓGICA DE BIENVENIDA ---
 if "welcome_shown" not in st.session_state:
     st.toast("🚀 Sistema Radar: ONLINE", icon="🤖")
     st.balloons()
@@ -43,13 +48,15 @@ st.markdown("""
             padding: 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a;
         }
         .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
+        .css-16idsys p { font-size: 12px; text-align: center; color: #ccc; }
+        /* Estilo para imágenes */
+        img { border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MEJORA: BANNER DE ESTADO PROYECTO ---
+# --- BANNER DE ESTADO ---
 st.success(f"🛠️ **PROYECTO: RADAR** | Almacenamiento: **900GB** | Estado: **Sincronizado**")
 
-# Hora local calculada manualmente
 hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
 
 # --- HEADER ---
@@ -66,7 +73,7 @@ with col_t2:
         </div>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES DE DATOS ---
+# --- DATOS ---
 @st.cache_data(ttl=15)
 def get_data():
     try:
@@ -79,7 +86,6 @@ def get_data():
         if df.empty:
             return df
 
-        # Combinamos y aplicamos el offset manual
         df['fecha_completa'] = pd.to_datetime(df['fecha'].astype(str) + ' ' + df['hora'].astype(str))
         df['fecha_completa'] = df['fecha_completa'] + timedelta(hours=OFFSET_HORAS)
         
@@ -140,6 +146,43 @@ if not df_raw.empty:
     m2.metric("Promedio Velocidad", f"{round(df['velocidad'].mean(), 1)} km/h")
     m3.metric("Récord Registrado", f"{df['velocidad'].max()} km/h")
     m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
+
+    # ==========================================
+    # SECCIÓN: GALERÍA VISUAL (SIN ERRORES AMARILLOS)
+    # ==========================================
+    st.divider()
+    st.subheader("📸 Última Evidencia Capturada (Tiempo Real)")
+    
+    if os.path.exists(FOTOS_PATH):
+        archivos_fotos = glob.glob(os.path.join(FOTOS_PATH, "*.jpg"))
+        
+        if archivos_fotos:
+            ultimos_archivos = sorted(archivos_fotos, key=os.path.getmtime, reverse=True)[:4]
+            cols_galeria = st.columns(4)
+            
+            for idx, archivo in enumerate(ultimos_archivos):
+                with cols_galeria[idx]:
+                    try:
+                        nombre_archivo = os.path.basename(archivo)
+                        base_limpia = nombre_archivo.lower().replace('.jpg', '').replace('.jpeg', '')
+                        partes = base_limpia.split('_')
+                        
+                        if len(partes) >= 2:
+                            radar_name = partes[0].upper()
+                            velocidad_val = partes[1]
+                            caption_txt = f"📍 {radar_name} | ⚡ {velocidad_val} km/h"
+                        else:
+                            caption_txt = nombre_archivo
+
+                        # AQUÍ ESTÁ EL CAMBIO: use_container_width=True
+                        st.image(archivo, caption=caption_txt, use_container_width=True)
+                    except Exception as e:
+                        st.error("Error img")
+        else:
+            st.info("☁️ Esperando primeras capturas en la carpeta...")
+    else:
+        st.warning(f"⚠️ Ruta no accesible: {FOTOS_PATH}")
+    # ==========================================
 
     st.divider()
 
