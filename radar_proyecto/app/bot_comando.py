@@ -19,9 +19,7 @@ FOTOS_PATH = "/mnt/darat/multas_fotos/"
 URL_DASHBOARD = os.getenv("URL_PUBLICO", "http://localhost:8501")
 
 # --- ZONA DE PERSONALIZACIÓN ---
-# PASO 1: Envía tu sticker favorito al bot por Telegram.
-# PASO 2: El bot te responderá con el ID. Copialo y pegalo aquí abajo.
-STICKER_ROCKET = "CAACAgIAAyEFAATOYvOMAAEGAuBpgU69jcRT0NOoYVshFUdDUfBqdQACPwAD29t-AAH05pw4AeSqaTgE"#"CAACAgIAAxkBAAEQaN5pgUyrg7oYGh4H2oAEarPqApF9kgAC9QAD9wLID0dGmGHRUMixOAQ" 
+STICKER_ROCKET = "CAACAgIAAyEFAATOYvOMAAEGAuBpgU69jcRT0NOoYVshFUdDUfBqdQACPwAD29t-AAH05pw4AeSqaTgE"
 
 try:
     from monitor_radar import reader, model_ai, validar_placa
@@ -271,7 +269,7 @@ def reporte_automatico_cierre():
 # --- BUCLE PRINCIPAL ---
 def listen_bot():
     last_id = 0
-    print("💎 Clawdbot v5.9.8 (Final Stable) Activa.")
+    print("💎 Clawdbot v5.9.9 (Manual Full) Activa.")
     
     TECLADO_PERSISTENTE = {
         "keyboard": [[{"text": "🎛 ABRIR PANEL"}]],
@@ -326,12 +324,29 @@ def listen_bot():
                             enviar_o_editar(cid_t, mid_t, res, MENU_CLIPS)
                         threading.Thread(target=tarea_clips, args=(chat_id, mid)).start()
                     
+                    # --- SECCIÓN MANUAL ACTUALIZADA ---
                     elif data == "cmd_manual":
-                        ack(cid, "Ayuda...")
-                        # Intenta enviar el sticker del cohete
+                        ack(cid, "Cargando manual...")
                         enviar_sticker(chat_id, STICKER_ROCKET)
-                        ayuda = f"🛠 <b>MANUAL RÁPIDO</b>\n\n• Use el botón de abajo 'ABRIR PANEL'.\n• Escriba nombre del video para bajarlo.\n\n🔗 <a href='{URL_DASHBOARD}'>ACCESO WEB (GRAFANA)</a>"
-                        enviar_o_editar(chat_id, mid, ayuda, MENU_SISTEMA)
+                        
+                        manual_texto = (
+                            f"📚 <b>MANUAL DE USUARIO CLAWDBOT</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"🤖 <b>¿QUÉ ES ESTE SISTEMA?</b>\n"
+                            f"Es un monitor autónomo de radares de velocidad. Detecta infracciones, captura evidencia (foto/video), lee placas con IA y genera reportes automáticos.\n\n"
+                            f"🎮 <b>GUÍA DE NAVEGACIÓN</b>\n"
+                            f"<b>1. 📊 Reportes:</b> Resumen del día y últimos registros en vivo.\n"
+                            f"<b>2. 📡 Control (IA):</b> Solicita fotos actuales o clips de 15s de los radares.\n"
+                            f"<b>3. 📂 Clips:</b> Explora las grabaciones guardadas.\n"
+                            f"<b>4. ⚙️ Sistema:</b> Estado de salud (Red/Disco) y limpieza.\n\n"
+                            f"📹 <b>DESCARGA DE EVIDENCIA</b>\n"
+                            f"Si ves un nombre de archivo en los reportes (ej: <code>ROMANZA_85_120000.mp4</code>), simplemente <b>copia y pega ese nombre</b> en este chat. El bot te enviará el video original.\n\n"
+                            f"🚀 <b>BOTÓN INFERIOR</b>\n"
+                            f"Use el botón <b>'🎛 ABRIR PANEL'</b> del teclado para invocar el menú principal en cualquier momento.\n\n"
+                            f"🔗 <a href='{URL_DASHBOARD}'>ACCESO WEB (GRAFANA)</a>"
+                        )
+                        
+                        enviar_o_editar(chat_id, mid, manual_texto, MENU_SISTEMA)
 
                     elif data.startswith("iafoto_"):
                         ack(cid, "Procesando IA...")
@@ -350,15 +365,13 @@ def listen_bot():
                 # --- 2. ZONA DE TEXTO Y COMANDOS ---
                 msg = up.get("message", {}); txt = msg.get("text", "")
 
-                # DETECCIÓN DE TU STICKER (¡NUEVO!)
+                # DETECCIÓN DE TU STICKER
                 if "sticker" in msg:
                     sid = msg["sticker"]["file_id"]
-                    # Te envía el ID al chat para que lo copies
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
                                   json={"chat_id": chat_id, "text": f"🆔 TU ID DE STICKER:\n<code>{sid}</code>", "parse_mode": "HTML"})
 
                 if "/start" in txt or "ABRIR PANEL" in txt:
-                    # Intenta enviar el sticker del cohete
                     enviar_sticker(chat_id, STICKER_ROCKET)
                     
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 

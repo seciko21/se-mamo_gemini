@@ -134,22 +134,22 @@ def motor_mantenimiento():
         time.sleep(300)
 
 # ==========================================
-# 4. GESTIÓN DE VIDEO (30s BUFFER + 15s LIVE)
+# 4. GESTIÓN DE VIDEO (20s BUFFER + 15s LIVE)
 # ==========================================
 def worker_buffer_continuo(nombre_radar, ip):
     radar_path = os.path.join(BUFFER_DIR, nombre_radar)
     os.makedirs(radar_path, exist_ok=True)
-    print(f"🔄 [BUFFER] Iniciando ciclo 30s para {nombre_radar}...")
+    print(f"🔄 [BUFFER] Iniciando ciclo 20s para {nombre_radar}...")
     
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
-        dest = os.path.join(radar_path, "evidencia_30s.mp4")
+        dest = os.path.join(radar_path, "evidencia_20s.mp4")
         
-        # Buffer de 30 segundos (Aumentado de 20 a 30 para mejor contexto)
+        # Buffer de 20 segundos (Aumentado de 20 a 30 para mejor contexto)
         subprocess.run([
             "ffmpeg", "-rtsp_transport", "tcp", 
             "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
-            "-t", "30", "-c", "copy", "-y", tmp
+            "-t", "20", "-c", "copy", "-y", tmp
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # PROTECCIÓN CONTRA CRASH: Solo renombramos si existe
@@ -161,10 +161,10 @@ def worker_buffer_continuo(nombre_radar, ip):
             time.sleep(5)
 
 def enviar_video_completo(radar_name, ip, speed, caption):
-    """Une el buffer (30s) con el presente (15s) = 45s Total."""
+    """Une el buffer (20s) con el presente (15s) = 35s Total."""
     ahora_s = datetime.now().strftime('%H%M%S')
     radar_path = os.path.join(BUFFER_DIR, radar_name)
-    past_p = os.path.join(radar_path, "evidencia_30s.mp4")
+    past_p = os.path.join(radar_path, "evidencia_20s.mp4")
     live_p = os.path.join(radar_path, f"live_{ahora_s}.mp4")
     final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
     list_p = os.path.join(radar_path, f"list_{ahora_s}.txt")

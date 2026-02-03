@@ -23,7 +23,7 @@ st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="�
 
 # --- MEJORA: LÓGICA DE BIENVENIDA SE-MAMO_GEMINI ---
 if "welcome_shown" not in st.session_state:
-    st.toast("🚀 Sistema se-mamo_gemini: ONLINE", icon="🤖")
+    st.toast("🚀 Sistema Radar: ONLINE", icon="🤖")
     st.balloons()
     st.session_state.welcome_shown = True
 
