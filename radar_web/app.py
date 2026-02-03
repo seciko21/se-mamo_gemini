@@ -16,8 +16,6 @@ OFFSET_HORAS = -0
 # RUTAS DE DATOS (Ajustadas al entorno Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'
 CLIPS_DIR = "/app/clips/"
-
-# RUTA DE FOTOS (Usamos la ruta interna que ya comprobamos que funciona)
 FOTOS_PATH = "/app/imagenes_multas/" 
 
 USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
@@ -49,13 +47,12 @@ st.markdown("""
         }
         .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
         .css-16idsys p { font-size: 12px; text-align: center; color: #ccc; }
-        /* Estilo para imágenes */
         img { border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- BANNER DE ESTADO ---
-st.success(f"🛠️ **PROYECTO: RADAR** | Almacenamiento: **900GB** | Estado: **Sincronizado**")
+st.success(f"🛠️ **PROYECTO: RADAR v6.1** | Almacenamiento: **900GB** | Analítica: **Heatmap Activo**")
 
 hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
 
@@ -148,7 +145,7 @@ if not df_raw.empty:
     m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
 
     # ==========================================
-    # SECCIÓN: GALERÍA VISUAL (SIN ERRORES AMARILLOS)
+    # SECCIÓN: GALERÍA VISUAL
     # ==========================================
     st.divider()
     st.subheader("📸 Última Evidencia Capturada (Tiempo Real)")
@@ -174,7 +171,6 @@ if not df_raw.empty:
                         else:
                             caption_txt = nombre_archivo
 
-                        # AQUÍ ESTÁ EL CAMBIO: use_container_width=True
                         st.image(archivo, caption=caption_txt, use_container_width=True)
                     except Exception as e:
                         st.error("Error img")
@@ -182,7 +178,6 @@ if not df_raw.empty:
             st.info("☁️ Esperando primeras capturas en la carpeta...")
     else:
         st.warning(f"⚠️ Ruta no accesible: {FOTOS_PATH}")
-    # ==========================================
 
     st.divider()
 
@@ -194,10 +189,51 @@ if not df_raw.empty:
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with col_chart2:
-        st.subheader("📈 Tendencia de Detecciones")
-        df['hora_int'] = df['fecha_completa'].dt.hour
-        fig_area = px.area(df.groupby('hora_int').size().reset_index(name='count'), x='hora_int', y='count', template="plotly_dark", color_discrete_sequence=['#00ff00'])
-        st.plotly_chart(fig_area, use_container_width=True)
+        # ==========================================
+        # NUEVO: MAPA DE CALOR SEMANAL (HEATMAP)
+        # ==========================================
+        st.subheader("🔥 Mapa de Calor (Día vs Hora)")
+        
+        try:
+            # 1. Preparamos los datos
+            df_heat = df.copy()
+            dias_traduccion = {
+                0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 
+                4: 'Viernes', 5: 'Sábado', 6: 'Domingo'
+            }
+            # Extraemos día numérico y nombre
+            df_heat['dia_num'] = df_heat['fecha_completa'].dt.dayofweek
+            df_heat['dia_nombre'] = df_heat['dia_num'].map(dias_traduccion)
+            df_heat['hora_dia'] = df_heat['fecha_completa'].dt.hour
+            
+            # 2. Agrupamos para contar infracciones
+            heatmap_data = df_heat.groupby(['dia_nombre', 'dia_num', 'hora_dia']).size().reset_index(name='conteo')
+            
+            # 3. Creamos el Heatmap con Plotly
+            fig_heat = px.density_heatmap(
+                heatmap_data, 
+                x='hora_dia', 
+                y='dia_nombre', 
+                z='conteo', 
+                nbinsx=24, # 24 horas
+                color_continuous_scale='Inferno', # Colores estilo "fuego"
+                template="plotly_dark"
+            )
+            
+            # 4. Ajustes Visuales Finos
+            fig_heat.update_layout(
+                xaxis_title="Hora del Día (00:00 - 23:00)",
+                yaxis_title=None,
+                coloraxis_colorbar_title="Infracciones"
+            )
+            # Forzamos el orden correcto de Lunes a Domingo
+            fig_heat.update_yaxes(categoryorder='array', categoryarray=['Domingo', 'Sábado', 'Viernes', 'Jueves', 'Miércoles', 'Martes', 'Lunes'])
+            
+            st.plotly_chart(fig_heat, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error generando heatmap: {e}")
+        # ==========================================
 
     st.divider()
 
