@@ -61,7 +61,7 @@ def clasificar_vehiculo(img):
     except: return "🚗 Vehículo"
 
 # ==========================================
-# 3. BASE DE DATOS Y RESILIENCIA (Líneas Críticas)
+# 3. BASE DE DATOS Y RESILIENCIA
 # ==========================================
 def init_db():
     try:
@@ -134,26 +134,71 @@ def motor_mantenimiento():
         time.sleep(300)
 
 # ==========================================
-# 4. GESTIÓN DE VIDEO (INSTANTÁNEA 30s)
+# 4. GESTIÓN DE VIDEO (30s BUFFER + 15s LIVE)
 # ==========================================
 def worker_buffer_continuo(nombre_radar, ip):
     radar_path = os.path.join(BUFFER_DIR, nombre_radar)
     os.makedirs(radar_path, exist_ok=True)
+    print(f"🔄 [BUFFER] Iniciando ciclo 30s para {nombre_radar}...")
+    
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
-        # Buffer de 30 segundos (Caja Negra)
-        subprocess.run(["ffmpeg", "-rtsp_transport", "tcp", "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", "-t", "30", "-c", "copy", "-y", tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        os.rename(tmp, os.path.join(radar_path, "evidencia_30s.mp4"))
+        dest = os.path.join(radar_path, "evidencia_30s.mp4")
+        
+        # Buffer de 30 segundos (Aumentado de 20 a 30 para mejor contexto)
+        subprocess.run([
+            "ffmpeg", "-rtsp_transport", "tcp", 
+            "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
+            "-t", "30", "-c", "copy", "-y", tmp
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # PROTECCIÓN CONTRA CRASH: Solo renombramos si existe
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            try: os.rename(tmp, dest)
+            except: pass
+        else:
+            print(f"⚠️ [BUFFER] Fallo en {nombre_radar}. Reintentando...")
+            time.sleep(5)
 
-def enviar_video_instantaneo(radar_name, speed, caption):
+def enviar_video_completo(radar_name, ip, speed, caption):
+    """Une el buffer (30s) con el presente (15s) = 45s Total."""
     ahora_s = datetime.now().strftime('%H%M%S')
+    radar_path = os.path.join(BUFFER_DIR, radar_name)
+    past_p = os.path.join(radar_path, "evidencia_30s.mp4")
+    live_p = os.path.join(radar_path, f"live_{ahora_s}.mp4")
     final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
-    buffer_p = os.path.join(BUFFER_DIR, radar_name, "evidencia_30s.mp4")
+    list_p = os.path.join(radar_path, f"list_{ahora_s}.txt")
+
+    if not os.path.exists(past_p) or os.path.getsize(past_p) == 0:
+        return # Sin buffer no hay video
+
     try:
-        if os.path.exists(buffer_p):
-            subprocess.run(["cp", buffer_p, final_p])
-            with open(final_p, 'rb') as v: 
-                enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+        # 1. Grabar 15s en tiempo real
+        subprocess.run([
+            "ffmpeg", "-rtsp_transport", "tcp", 
+            "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
+            "-t", "15", "-c", "copy", "-y", live_p
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if os.path.exists(live_p) and os.path.getsize(live_p) > 0:
+            # 2. Unir usando lista (Fast Concat - Sin recodificar)
+            with open(list_p, "w") as f:
+                f.write(f"file '{past_p}'\n")
+                f.write(f"file '{live_p}'\n")
+
+            subprocess.run([
+                "ffmpeg", "-f", "concat", "-safe", "0", "-i", list_p, 
+                "-c", "copy", "-y", final_p
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            # 3. Enviar
+            if os.path.exists(final_p) and os.path.getsize(final_p) > 0:
+                with open(final_p, 'rb') as v: 
+                    enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+            
+            # Limpieza
+            for f in [live_p, list_p]:
+                if os.path.exists(f): os.remove(f)
     except: pass
 
 # ==========================================
@@ -193,7 +238,7 @@ def procesar_imagen_csi(ruta_foto, speed):
 def procesar_deteccion(radar_name, ip, speed):
     ahora_dt = datetime.now()
     hora_s = ahora_dt.strftime('%H:%M:%S')
-    LAST_SEEN[radar_name] = time.time() # Actualizamos actividad
+    LAST_SEEN[radar_name] = time.time() 
     
     if speed <= 54:
         registrar_historial(radar_name, speed, None, "OMITIDO")
@@ -219,9 +264,10 @@ def procesar_deteccion(radar_name, ip, speed):
     if archivo_foto:
         with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
             enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
-        # ENVÍO INSTANTÁNEO DE VIDEO
+        
+        # ENVÍO DE VIDEO DE EVIDENCIA COMPLETA (45s)
         if speed >= 60:
-            threading.Thread(target=enviar_video_instantaneo, args=(radar_name, speed, cap)).start()
+            threading.Thread(target=enviar_video_completo, args=(radar_name, ip, speed, cap)).start()
 
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
