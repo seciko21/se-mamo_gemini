@@ -6,176 +6,200 @@ import time
 from datetime import datetime, timedelta
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA
+# 🛑 CONFIGURACIÓN DE PÁGINA
 # ==========================================
 st.set_page_config(page_title="Infracciones Graves", page_icon="🚨", layout="wide")
 
-# ==========================================
-# 1. DETECCIÓN DE RUTAS (INTELIGENTE)
-# ==========================================
-RUTAS_DB = [
-    '/app/data_folder/cola_mensajes.db',  # Docker
-    'db_radar.sqlite',                    # Local Symlink
-    'cola_mensajes.db'                    # Local Directo
-]
-DB_PATH = next((r for r in RUTAS_DB if os.path.exists(r)), None)
-FOTOS_DIR = "imagenes_multas"
+# RUTAS
+DB_PATH = '/app/data_folder/cola_mensajes.db'
+FOTOS_DIR = "/app/imagenes_multas/"
+if not os.path.exists(DB_PATH): DB_PATH = 'cola_mensajes.db'
 
 # ==========================================
-# 2. CARGA DE DATOS OPTIMIZADA (CACHE)
+# ✨ CSS MAESTRO: SIDEBAR PRO + EVIDENCIA
 # ==========================================
-@st.cache_data(ttl=15)  # Se actualiza cada 15 segundos automáticamente si hay cambios
+st.markdown("""
+    <style>
+        /* --- 1. FONDO --- */
+        .stApp {
+            background-color: #0b0f19;
+            background-image: radial-gradient(circle at 50% -20%, #1c2235 0%, #0b0f19 60%);
+        }
+        .block-container { padding-top: 2rem; max-width: 96%; }
+
+        /* --- 2. SIDEBAR (MENÚ LATERAL) --- */
+        [data-testid="stSidebar"] {
+            background-color: #0b0f19;
+            border-right: 1px solid rgba(100, 149, 237, 0.05);
+        }
+        div[data-testid="stSidebarNav"]::before {
+            content: "PANEL DE CONTROL";
+            margin-left: 20px; margin-top: 20px; margin-bottom: 10px;
+            font-size: 10px; font-weight: 700; color: #5f6368; letter-spacing: 1px;
+            display: block;
+        }
+        div[data-testid="stSidebarNav"] a {
+            background-color: transparent;
+            color: #9aa0a6;
+            border-radius: 12px;
+            margin: 5px 10px; padding: 10px 15px;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+        div[data-testid="stSidebarNav"] a:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+            color: #e8eaed;
+            transform: translateX(3px);
+        }
+        div[data-testid="stSidebarNav"] a[aria-current="page"] {
+            background: linear-gradient(90deg, rgba(66, 133, 244, 0.15), rgba(233, 30, 99, 0.15));
+            border: 1px solid rgba(138, 180, 248, 0.2);
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        /* --- 3. TARJETAS GEMINI --- */
+        .gemini-card {
+            background-color: #131722;
+            border-radius: 24px;
+            border: 1px solid rgba(100, 149, 237, 0.08);
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        /* --- 4. TEXTOS Y GRADIENTES --- */
+        .gradient-text-alert {
+            background: linear-gradient(90deg, #ff9a9e, #fecfef, #f5576c);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;
+        }
+        
+        /* --- 5. TARJETAS DE EVIDENCIA --- */
+        .evidence-card {
+            background-color: #1a1e29;
+            border: 1px solid rgba(245, 87, 108, 0.3);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .evidence-header {
+            background: rgba(245, 87, 108, 0.1);
+            padding: 10px 15px;
+            border-bottom: 1px solid rgba(245, 87, 108, 0.2);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .pill-tag {
+            padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; display: inline-block;
+        }
+        
+        /* --- 6. INPUTS --- */
+        .stSelectbox > div > div, .stDateInput > div > div, .stTextInput > div > div > input {
+            background-color: #1e2330 !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #e8eaed !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 🧠 LÓGICA
+# ==========================================
+@st.cache_data(ttl=15)
 def cargar_graves(fecha_inicio, fecha_fin):
-    if not DB_PATH: return pd.DataFrame()
-
+    if not os.path.exists(DB_PATH): return pd.DataFrame()
     try:
-        conn = sqlite3.connect(DB_PATH)
-        # Verificamos columnas para evitar errores
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(historial)")
-        cols = [i[1] for i in cursor.fetchall()]
-        
-        # --- DETECCIÓN DINÁMICA DE COLUMNAS NUEVAS ---
-        has_foto = 'foto' in cols
-        has_placa = 'placa' in cols
-        
-        col_foto = ", foto" if has_foto else ""
-        col_placa = ", placa" if has_placa else ""
-        
-        # Consulta actualizada para traer la PLACA también
-        query = f"""
-            SELECT id, radar, velocidad, fecha, hora {col_foto} {col_placa}
-            FROM historial 
-            WHERE velocidad >= 60 
-            AND fecha BETWEEN ? AND ?
-            ORDER BY fecha DESC, hora DESC
-        """
-        
-        df = pd.read_sql_query(query, conn, params=(fecha_inicio, fecha_fin))
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        query = "SELECT * FROM historial WHERE velocidad >= 60 AND fecha BETWEEN ? AND ? ORDER BY fecha DESC, hora DESC"
+        df = pd.read_sql_query(query, conn, params=(str(fecha_inicio), str(fecha_fin)))
         conn.close()
+        if df.empty: return df
+        if 'tipo' not in df.columns: df['tipo'] = "N/A"
+        if 'placa' not in df.columns: df['placa'] = "---"
         return df
-    except Exception as e:
-        st.error(f"Error DB: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 # ==========================================
-# 3. INTERFAZ Y FILTROS LATERALES
+# 🖥️ UI
 # ==========================================
-st.title("🚨 Monitor de Infracciones Graves")
-st.markdown("---")
+st.markdown("""
+    <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 20px;">
+        <span style="font-size: 32px;">🚨</span> Monitor de <span class="gradient-text-alert">Infracciones Graves</span>
+    </div>
+""", unsafe_allow_html=True)
 
-# Sidebar para filtros
-with st.sidebar:
-    st.header("🔍 Filtros de Búsqueda")
-    
-    # Filtro de Fechas
+with st.container():
+    st.markdown('<div class="gemini-card" style="padding: 15px;">', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
     hoy = datetime.now().date()
-    col1, col2 = st.columns(2)
-    f_inicio = col1.date_input("Desde", hoy - timedelta(days=7)) 
-    f_fin = col2.date_input("Hasta", hoy)
-    
-    # Carga de datos inicial con el rango seleccionado
+    f_inicio = c1.date_input("Desde", hoy - timedelta(days=7)) 
+    f_fin = c2.date_input("Hasta", hoy)
     df = cargar_graves(f_inicio, f_fin)
-    
-    # Filtro de Radar (dinámico)
-    radares_disponibles = ["Todos"] + sorted(list(df['radar'].unique())) if not df.empty else ["Todos"]
-    filtro_radar = st.selectbox("Seleccionar Radar:", radares_disponibles)
-    
-    # --- NUEVO: FILTRO POR PLACA ---
-    filtro_placa = st.text_input("Buscar por Placa:", "").upper()
-    
-    st.divider()
-    st.caption(f"📅 Mostrando datos del {f_inicio} al {f_fin}")
-    
-    if st.button("🔄 Actualizar Ahora", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+    radares_list = ["Todos"] + sorted(list(df['radar'].unique())) if not df.empty else ["Todos"]
+    tipos_list = ["Todos"] + sorted(list(df['tipo'].unique())) if not df.empty else ["Todos"]
+    filtro_radar = c3.selectbox("Radar", radares_list)
+    filtro_tipo = c4.selectbox("Vehículo", tipos_list)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Aplicar filtros en memoria
 df_show = df.copy()
-if filtro_radar != "Todos":
-    df_show = df_show[df_show['radar'] == filtro_radar]
-
-if filtro_placa:
-    # Filtramos si la columna placa existe y el texto coincide
-    if 'placa' in df_show.columns:
-        df_show = df_show[df_show['placa'].str.contains(filtro_placa, na=False)]
-
-# ==========================================
-# 4. MÉTRICAS SUPERIORES (KPIs)
-# ==========================================
 if not df_show.empty:
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    
-    kpi1.metric("Total Graves", len(df_show), delta="En rango seleccionado")
-    
-    max_vel = df_show['velocidad'].max()
-    radar_max = df_show.loc[df_show['velocidad'].idxmax()]['radar']
-    kpi2.metric("Récord de Velocidad", f"{max_vel} km/h", radar_max, delta_color="inverse")
-    
-    radar_freq = df_show['radar'].mode()[0]
-    count_freq = len(df_show[df_show['radar'] == radar_freq])
-    kpi3.metric("Radar + Conflictivo", radar_freq, f"{count_freq} multas")
+    if filtro_radar != "Todos": df_show = df_show[df_show['radar'] == filtro_radar]
+    if filtro_tipo != "Todos": df_show = df_show[df_show['tipo'] == filtro_tipo]
 
-    @st.cache_data
-    def convert_df(df):
-        return df.to_csv(index=False).encode('utf-8')
-
-    csv = convert_df(df_show)
-    kpi4.download_button(
-        label="📥 Descargar Reporte CSV",
-        data=csv,
-        file_name='infracciones_graves.csv',
-        mime='text/csv',
-    )
+# KPIs
+if not df_show.empty:
+    k1, k2, k3, k4 = st.columns(4)
+    grad_red = "background: linear-gradient(45deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 32px; font-weight: 800;"
     
-    st.markdown("---")
+    def alert_kpi(col, title, val, sub):
+        col.markdown(f"""
+            <div class="gemini-card" style="padding: 15px; border: 1px solid rgba(245, 87, 108, 0.2); text-align: center;">
+                <div style="font-size: 11px; color: #ffb4ab; font-weight: bold; text-transform: uppercase;">{title}</div>
+                <div style="{grad_red}">{val}</div>
+                <div style="font-size: 11px; color: #aaa;">{sub}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-# ==========================================
-# 5. GALERÍA DE TARJETAS (CON SOPORTE IA)
-# ==========================================
+    alert_kpi(k1, "TOTAL GRAVES", len(df_show), "Infracciones > 60km/h")
+    alert_kpi(k2, "VELOCIDAD MAX", f"{df_show['velocidad'].max()} km/h", "Récord del periodo")
+    radar_critico = df_show['radar'].mode()[0] if not df_show.empty else "N/A"
+    alert_kpi(k3, "PUNTO CRÍTICO", radar_critico, "Mayor incidencia")
+    with k4:
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        csv = df_show.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 DESCARGAR REPORTE", csv, f"reporte_{hoy}.csv", "text/csv", use_container_width=True)
+
+# Galería
+st.markdown("<br>", unsafe_allow_html=True)
 if df_show.empty:
-    st.info("✅ No se encontraron infracciones graves con los filtros seleccionados.")
+    st.info("✅ No se encontraron infracciones.")
 else:
     cols = st.columns(3)
-    
-    for index, row in df_show.reset_index().iterrows():
-        with cols[index % 3]:
-            with st.container(border=True):
-                # Encabezado
-                c_head1, c_head2 = st.columns([2, 1])
-                c_head1.subheader(f"⚡ {row['velocidad']} km/h")
-                c_head2.caption(f"{row['fecha']}")
-                
-                st.text(f"📍 {row['radar']} | 🕒 {row['hora']}")
-                
-                # --- MOSTRAR PLACA (CORRECCIÓN IA) ---
-                if 'placa' in row and row['placa'] not in [None, "NO_APLICA", "NO_DETECTADA", "ERROR_IA"]:
-                    st.success(f"🆔 **PLACA: {row['placa']}**")
-                else:
-                    st.warning("🆔 Placa: No identificada")
-                
-                # Imagen
-                nombre_foto = row.get('foto')
-                img_mostrada = False
-                
-                if nombre_foto:
-                    ruta_completa = os.path.join(FOTOS_DIR, nombre_foto)
-                    if os.path.exists(ruta_completa):
-                        st.image(ruta_completa, use_container_width=True)
-                        img_mostrada = True
-                
-                if not img_mostrada:
-                    st.markdown("""
-                        <div style="
-                            height: 150px; 
-                            background-color: #262730; 
-                            border-radius: 8px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            color: #888;
-                            border: 1px dashed #444;">
-                            📷 Sin Evidencia Visual
+    for idx, row in df_show.reset_index().iterrows():
+        with cols[idx % 3]:
+            placa = row.get('placa', '---')
+            placa_html = f'<span class="pill-tag" style="background:rgba(129, 201, 149, 0.2); color:#81c995;">🆔 {placa}</span>'
+            st.markdown(f"""
+                <div class="evidence-card">
+                    <div class="evidence-header">
+                        <span style="color:#ffb4ab; font-weight:bold; font-size:18px;">⚡ {row['velocidad']} km/h</span>
+                        <span style="color:#aaa; font-size:12px;">{row['hora']}</span>
+                    </div>
+                    <div style="padding:15px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <span style="color:#e8eaed; font-weight:500;">📍 {row['radar']}</span>
+                            {placa_html}
                         </div>
-                    """, unsafe_allow_html=True)
+                        <div style="color:#9aa0a6; font-size:12px; margin-bottom:10px;">📦 Tipo: {row['tipo']}</div>
+                    </div>
+            """, unsafe_allow_html=True)
+            foto = row.get('foto')
+            if foto and os.path.exists(os.path.join(FOTOS_DIR, foto)):
+                st.image(os.path.join(FOTOS_DIR, foto), use_container_width=True)
+            else:
+                st.markdown("<div style='height:150px; background:#111;'></div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+time.sleep(30)
+st.rerun()

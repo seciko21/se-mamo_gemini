@@ -4,264 +4,322 @@ import sqlite3
 import os
 import plotly.express as px
 from datetime import datetime, date, timedelta
-import io
 import time
-import glob
 
 # ==========================================
-# CONFIGURACIÓN DE TIEMPO
+# 🛑 CONFIGURACIÓN DEL SISTEMA
 # ==========================================
+st.set_page_config(
+    page_title="Radar LCC AI", 
+    layout="wide", 
+    page_icon="✨", 
+    initial_sidebar_state="expanded"
+)
+
 OFFSET_HORAS = -0
 
-# RUTAS DE DATOS (Ajustadas al entorno Docker)
+# RUTAS (Prioridad Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'
+if not os.path.exists(DB_PATH): DB_PATH = 'cola_mensajes.db'
 CLIPS_DIR = "/app/clips/"
 FOTOS_PATH = "/app/imagenes_multas/" 
 
-USER_BOT_TELEGRAM = "Rocket_lcc_bot" 
-LINK_GRUPO_ALERTAS = "https://t.me/+K3LKAHY-EF40ZGJh"
-
-pd.set_option("styler.render.max_elements", 1000000)
-st.set_page_config(page_title="Radar Dashboard Pro", layout="wide", page_icon="🏎️")
-
-# --- LÓGICA DE BIENVENIDA ---
-if "welcome_shown" not in st.session_state:
-    st.toast("🚀 Sistema Radar: ONLINE", icon="🤖")
-    st.balloons()
-    st.session_state.welcome_shown = True
-
-if "last_refresh" not in st.session_state:
-    st.session_state.last_refresh = time.time()
-
+# ==========================================
+# ✨ CSS MAESTRO: GEMINI DARK UI + SIDEBAR PRO
+# ==========================================
 st.markdown("""
-    <style> 
-        .main { background-color: #0e1117; }
-        .stMetric { 
-            background-color: #161b22; 
-            border-radius: 10px; padding: 15px; 
-            border: 1px solid #30363d; border-left: 5px solid #00ff00; 
+    <style>
+        /* --- 1. FONDO "DEEP SPACE" --- */
+        .stApp {
+            background-color: #0b0f19;
+            background-image: radial-gradient(circle at 50% -20%, #1c2235 0%, #0b0f19 60%);
         }
-        .time-box {
-            text-align: right; color: #00ff00; font-family: 'Courier New', monospace;
-            padding: 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a;
+        
+        .block-container { padding-top: 2rem; max-width: 96%; }
+
+        /* --- 2. SIDEBAR (MENÚ LATERAL) ESTILO GEMINI --- */
+        [data-testid="stSidebar"] {
+            background-color: #0b0f19;
+            border-right: 1px solid rgba(100, 149, 237, 0.05);
         }
-        .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #0088cc; color: white; font-weight: bold; }
-        .css-16idsys p { font-size: 12px; text-align: center; color: #ccc; }
-        img { border-radius: 5px; }
+        
+        /* Título de Navegación */
+        div[data-testid="stSidebarNav"]::before {
+            content: "PANEL DE CONTROL";
+            margin-left: 20px; margin-top: 20px; margin-bottom: 10px;
+            font-size: 10px; font-weight: 700; color: #5f6368; letter-spacing: 1px;
+            display: block;
+        }
+        
+        /* Enlaces del Menú */
+        div[data-testid="stSidebarNav"] a {
+            background-color: transparent;
+            color: #9aa0a6;
+            border-radius: 12px;
+            margin: 5px 10px; padding: 10px 15px;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+
+        /* Hover */
+        div[data-testid="stSidebarNav"] a:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+            color: #e8eaed;
+            transform: translateX(3px);
+        }
+
+        /* ACTIVO (Página Actual - Efecto Gradiente) */
+        div[data-testid="stSidebarNav"] a[aria-current="page"] {
+            background: linear-gradient(90deg, rgba(66, 133, 244, 0.15), rgba(233, 30, 99, 0.15));
+            border: 1px solid rgba(138, 180, 248, 0.2);
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        /* --- 3. TARJETAS GEMINI (GLASS/ROUNDED) --- */
+        .gemini-card {
+            background-color: #131722;
+            border-radius: 24px;
+            border: 1px solid rgba(100, 149, 237, 0.08);
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        .gemini-card:hover {
+            border-color: rgba(138, 180, 248, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        /* --- 4. TYPOGRAPHY & GRADIENTS --- */
+        .gradient-text-logo {
+            background: linear-gradient(90deg, #8ab4f8, #f5a5c0, #e8eaed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+        
+        .card-header {
+            color: #e8eaed; font-size: 18px; font-weight: 600; margin-bottom: 20px;
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        /* --- 5. KPIs --- */
+        .kpi-val { font-size: 38px; font-weight: 700; color: #fff; letter-spacing: -1px; line-height: 1.1; }
+        .kpi-sub { font-size: 12px; color: #9aa0a6; margin-top: 6px; font-weight: 500; }
+        
+        /* --- 6. INPUTS REDONDEADOS --- */
+        .stSelectbox > div > div, .stDateInput > div > div, .stTextInput > div > div > input {
+            background-color: #1e2330 !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #e8eaed !important;
+        }
+        
+        /* --- 7. SCROLLBAR FINO --- */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# --- BANNER DE ESTADO ---
-st.success(f"🛠️ **PROYECTO: RADAR v6.1** | Almacenamiento: **900GB** | Analítica: **Heatmap Activo**")
-
-hora_local = datetime.now() + timedelta(hours=OFFSET_HORAS)
-
-# --- HEADER ---
-col_t1, col_t2 = st.columns([3, 1])
-with col_t1:
-    st.title("📊 Panel de Control - Radar Infracciones")
-    st.caption(f"📡 radar.radar-lcc.site | Sincronización CST: {hora_local.strftime('%H:%M:%S')}")
-with col_t2:
-    st.markdown(f"""
-        <div class="time-box">
-            <small>SINCRO LOCAL (CST)</small><br>
-            📅 {hora_local.strftime('%d/%m/%Y')}<br>
-            🕒 {hora_local.strftime('%H:%M:%S')}
-        </div>
-    """, unsafe_allow_html=True)
-
-# --- DATOS ---
-@st.cache_data(ttl=15)
+# ==========================================
+# 🧠 MOTOR DE DATOS
+# ==========================================
+@st.cache_data(ttl=10)
 def get_data():
     try:
-        if not os.path.exists(DB_PATH):
-            return pd.DataFrame()
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query("SELECT id, radar, velocidad, fecha, hora FROM historial ORDER BY id DESC", conn)
+        if not os.path.exists(DB_PATH): return pd.DataFrame()
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        df = pd.read_sql_query("SELECT * FROM historial ORDER BY id DESC LIMIT 3000", conn)
         conn.close()
         
-        if df.empty:
-            return df
-
+        if df.empty: return df
+        
         df['fecha_completa'] = pd.to_datetime(df['fecha'].astype(str) + ' ' + df['hora'].astype(str))
         df['fecha_completa'] = df['fecha_completa'] + timedelta(hours=OFFSET_HORAS)
         
+        if 'tipo' not in df.columns: df['tipo'] = "N/A"
+        if 'placa' not in df.columns: df['placa'] = "---"
+        df['tipo'] = df['tipo'].fillna("N/A")
+        df['placa'] = df['placa'].fillna("---")
         return df
-    except Exception as e:
-        st.error(f"Error DB: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2343/2343277.png", width=100)
-    st.header("🛠️ Estado del Sistema")
-    
-    if os.path.exists(CLIPS_DIR):
-        st.success("📁 Disco 900GB: CONECTADO")
-    else:
-        st.error("📁 Disco 900GB: DESCONECTADO")
+df_raw = get_data()
 
-    st.divider()
-    
-    st.markdown("### 📡 Actividad en Vivo (15 min)")
-    df_raw = get_data()
-    
-    if not df_raw.empty:
-        tiempo_corte = hora_local - timedelta(minutes=15)
-        df_logs = df_raw[df_raw['fecha_completa'] >= tiempo_corte].copy()
-        
-        if not df_logs.empty:
-            for _, row in df_logs.head(8).iterrows():
-                color = "#ff4b4b" if row['velocidad'] >= 60 else "#ffaa00" if row['velocidad'] >= 41 else "#00ff00"
-                st.markdown(f"<div style='font-size:11px; color:{color}; font-family:monospace;'>● {row['fecha_completa'].strftime('%H:%M')} | {row['radar']} | {row['velocidad']} km/h</div>", unsafe_allow_html=True)
-        else:
-            st.info("Sin actividad reciente.")
-    
-    st.divider()
-    st.markdown("### ✈️ Accesos Directos")
-    st.link_button("🤖 Abrir Bot @Rocket_lcc_bot", f"https://t.me/{USER_BOT_TELEGRAM}", use_container_width=True)
-    st.link_button("🚨 Grupo LCC-RADAR", LINK_GRUPO_ALERTAS, use_container_width=True)
+# ==========================================
+# 🖥️ HEADER & FILTROS
+# ==========================================
+c_head, c_filt = st.columns([1, 1])
 
-# --- CUERPO PRINCIPAL ---
+with c_head:
+    # --- CAMBIO REALIZADO AQUÍ: LCC AI ---
+    st.markdown("""
+        <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 10px;">
+            <span style="font-size: 32px;">✨</span> Radar <span class="gradient-text-logo">LCC AI</span>
+        </div>
+    """, unsafe_allow_html=True)
+
 if not df_raw.empty:
     df = df_raw.copy()
     
-    st.sidebar.header("🔎 Filtros")
-    lista_radares = ["TODOS"] + sorted(df['radar'].unique().tolist())
-    radar_sel = st.sidebar.selectbox("Seleccionar Radar", lista_radares)
-    if radar_sel != "TODOS":
-        df = df[df['radar'] == radar_sel]
+    with c_filt:
+        c1, c2, c3 = st.columns(3)
+        radar_sel = c1.selectbox("📍 Ubicación", ["TODOS"] + sorted(df['radar'].unique().tolist()), label_visibility="collapsed")
+        tipo_sel = c2.selectbox("🚗 Clase", ["TODOS"] + sorted(df['tipo'].astype(str).unique().tolist()), label_visibility="collapsed")
+        f_min, f_max = df['fecha_completa'].dt.date.min(), df['fecha_completa'].dt.date.max()
+        rango = c3.date_input("Periodo", (max(f_min, f_max - timedelta(days=2)), f_max), label_visibility="collapsed")
 
-    f_min, f_max = df['fecha_completa'].dt.date.min(), df['fecha_completa'].dt.date.max()
-    rango = st.sidebar.date_input("Rango de Fechas", value=(max(f_min, f_max - timedelta(days=7)), f_max))
-    
-    if len(rango) == 2:
-        df = df[(df['fecha_completa'].dt.date >= rango[0]) & (df['fecha_completa'].dt.date <= rango[1])]
+    if radar_sel != "TODOS": df = df[df['radar'] == radar_sel]
+    if tipo_sel != "TODOS": df = df[df['tipo'] == tipo_sel]
+    if len(rango) == 2: df = df[(df['fecha_completa'].dt.date >= rango[0]) & (df['fecha_completa'].dt.date <= rango[1])]
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Infracciones", f"{len(df):,}")
-    m2.metric("Promedio Velocidad", f"{round(df['velocidad'].mean(), 1)} km/h")
-    m3.metric("Récord Registrado", f"{df['velocidad'].max()} km/h")
-    m4.metric("Infracciones Graves", len(df[df['velocidad'] >= 60]))
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # SECCIÓN: GALERÍA VISUAL
+    # 📊 NIVEL 1: TARJETAS KPI
     # ==========================================
-    st.divider()
-    st.subheader("📸 Última Evidencia Capturada (Tiempo Real)")
+    k1, k2, k3, k4 = st.columns(4)
     
-    if os.path.exists(FOTOS_PATH):
-        archivos_fotos = glob.glob(os.path.join(FOTOS_PATH, "*.jpg"))
+    def draw_kpi(col, title, val, sub, icon="📊", alert=False):
+        border = "1px solid rgba(255, 85, 70, 0.4)" if alert else "1px solid rgba(100, 149, 237, 0.1)"
+        bg = "rgba(255, 85, 70, 0.05)" if alert else "#131722"
+        text_col = "#ffb4ab" if alert else "#fff"
+        col.markdown(f"""
+            <div class="gemini-card" style="padding: 20px; border:{border}; background:{bg}; margin-bottom: 15px;">
+                <div style="color: #a8c7fa; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">
+                    {icon} {title}
+                </div>
+                <div class="kpi-val" style="color:{text_col};">{val}</div>
+                <div class="kpi-sub">{sub}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    draw_kpi(k1, "Tráfico Total", f"{len(df):,}", "Vehículos procesados")
+    draw_kpi(k2, "Vel. Promedio", f"{round(df['velocidad'].mean(), 1)}", "Km/h Global", "⚡")
+    graves = len(df[df['velocidad'] >= 60])
+    draw_kpi(k3, "Infracciones", f"{graves}", "Alertas de Prioridad", "🚨", alert=True)
+    draw_kpi(k4, "Récord Vel.", f"{df['velocidad'].max()}", "Km/h Máximo registrado", "🏆")
+
+    # ==========================================
+    # 📈 NIVEL 2: PANEL PRO (GRADIENTES GEMINI)
+    # ==========================================
+    st.markdown('<div class="gemini-card">', unsafe_allow_html=True)
+    c_chart, c_summary = st.columns([3, 1], gap="medium")
+    
+    with c_chart:
+        st.markdown('<div class="card-header">✨ Dispersión de Velocidad (IA Analysis)</div>', unsafe_allow_html=True)
+        gemini_gradient = ["#4285F4", "#9C27B0", "#E91E63"] 
+        fig_scatter = px.scatter(
+            df.head(600), x="fecha_completa", y="velocidad", color="velocidad", size="velocidad",
+            color_continuous_scale=gemini_gradient, hover_data=["radar", "placa"], template="plotly_dark"
+        )
+        fig_scatter.update_layout(
+            height=380, margin=dict(l=0, r=0, t=10, b=0),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title=None),
+            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="Km/h"),
+            font=dict(color="#9aa0a6")
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    with c_summary:
+        st.markdown("##### ⚡ Resumen Inteligente")
+        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        v_max = df['velocidad'].max()
+        v_mean = df['velocidad'].mean()
+        high_events = len(df[df['velocidad'] > 50])
         
-        if archivos_fotos:
-            ultimos_archivos = sorted(archivos_fotos, key=os.path.getmtime, reverse=True)[:4]
-            cols_galeria = st.columns(4)
-            
-            for idx, archivo in enumerate(ultimos_archivos):
-                with cols_galeria[idx]:
-                    try:
-                        nombre_archivo = os.path.basename(archivo)
-                        base_limpia = nombre_archivo.lower().replace('.jpg', '').replace('.jpeg', '')
-                        partes = base_limpia.split('_')
-                        
-                        if len(partes) >= 2:
-                            radar_name = partes[0].upper()
-                            velocidad_val = partes[1]
-                            caption_txt = f"📍 {radar_name} | ⚡ {velocidad_val} km/h"
-                        else:
-                            caption_txt = nombre_archivo
+        grad_cyan = "background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 28px; font-weight: 800;"
+        grad_pink = "background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 36px; font-weight: 800;"
 
-                        st.image(archivo, caption=caption_txt, use_container_width=True)
-                    except Exception as e:
-                        st.error("Error img")
-        else:
-            st.info("☁️ Esperando primeras capturas en la carpeta...")
-    else:
-        st.warning(f"⚠️ Ruta no accesible: {FOTOS_PATH}")
+        st.markdown(f"<div style='margin-bottom:15px;'><div style='font-size:11px; color:#a8c7fa; font-weight:bold;'>VELOCIDAD PICO</div><div style='{grad_cyan}'>{v_max} <span style='font-size:14px; -webkit-text-fill-color:#888;'>km/h</span></div></div>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown(f"<div style='margin-bottom:15px;'><div style='font-size:11px; color:#a8c7fa; font-weight:bold;'>PROMEDIO</div><div style='{grad_cyan}'>{v_mean:.1f} <span style='font-size:14px; -webkit-text-fill-color:#888;'>km/h</span></div></div>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown(f"<div style='background:linear-gradient(135deg,rgba(245,87,108,0.05),rgba(0,0,0,0)); border:1px solid rgba(245,87,108,0.3); border-radius:16px; padding:15px; text-align:center;'><span style='color:#ffb4ab; font-weight:bold; font-size:11px;'>🔴 ALERTAS ACTIVAS</span><div style='{grad_pink}; margin-top:5px;'>{high_events}</div></div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.divider()
+    # ==========================================
+    # 📸 NIVEL 3: FEED Y SENSORES (SOLUCIONADO)
+    # ==========================================
+    c_feed, c_side = st.columns([2, 1])
+    
+    with c_feed:
+        st.markdown('<div class="gemini-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-header">📸 Capturas Recientes</div>', unsafe_allow_html=True)
+        cols_img = st.columns(3)
+        for i, (_, row) in enumerate(df.head(3).iterrows()):
+            with cols_img[i]:
+                color = "#f5a5c0" if row['velocidad'] >= 60 else "#333"
+                st.markdown(f"<div style='border-radius:16px; overflow:hidden; border:1px solid {color}; margin-bottom:10px;'>", unsafe_allow_html=True)
+                foto = row.get('foto')
+                if foto and os.path.exists(os.path.join(FOTOS_PATH, foto)):
+                    st.image(os.path.join(FOTOS_PATH, foto), use_container_width=True)
+                else:
+                    st.markdown("<div style='height:100px; background:#1e2330;'></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:rgba(19,23,34,0.9); padding:8px; text-align:center;'><span style='color:#fff; font-weight:bold;'>{row['velocidad']} km/h</span></div></div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    col_chart1, col_chart2 = st.columns([1, 2])
-    with col_chart1:
-        st.subheader("🎯 Reparto por Radar")
-        fig_pie = px.pie(df, names='radar', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig_pie.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.5))
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-    with col_chart2:
-        # ==========================================
-        # NUEVO: MAPA DE CALOR SEMANAL (HEATMAP)
-        # ==========================================
-        st.subheader("🔥 Mapa de Calor (Día vs Hora)")
+    with c_side:
+        # Pestañas
+        tab1, tab2 = st.tabs(["📊 Distribución", "📡 Sensores"])
         
-        try:
-            # 1. Preparamos los datos
-            df_heat = df.copy()
-            dias_traduccion = {
-                0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 
-                4: 'Viernes', 5: 'Sábado', 6: 'Domingo'
-            }
-            # Extraemos día numérico y nombre
-            df_heat['dia_num'] = df_heat['fecha_completa'].dt.dayofweek
-            df_heat['dia_nombre'] = df_heat['dia_num'].map(dias_traduccion)
-            df_heat['hora_dia'] = df_heat['fecha_completa'].dt.hour
+        with tab1:
+            st.markdown('<div class="gemini-card" style="padding:15px;">', unsafe_allow_html=True)
+            colors = ["#8ab4f8", "#f5a5c0", "#81c995", "#fdd663"]
+            fig_pie = px.pie(df, names='radar', hole=0.6, color_discrete_sequence=colors)
+            fig_pie.update_layout(height=220, margin=dict(t=0,b=0,l=0,r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=True, legend=dict(orientation="h", y=-0.1))
+            st.plotly_chart(fig_pie, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
-            # 2. Agrupamos para contar infracciones
-            heatmap_data = df_heat.groupby(['dia_nombre', 'dia_num', 'hora_dia']).size().reset_index(name='conteo')
+        with tab2:
+            # === SENSORES HTML (VARIABLE PLANA PARA EVITAR ERRORES) ===
+            sensors_html_block = ""
+            sensors_html_block += '<div class="gemini-card" style="padding:15px; height:350px; overflow-y:auto;">'
+            sensors_html_block += '<div style="color:#e8eaed; font-size:16px; font-weight:600; margin-bottom:15px;">📡 Estado de Sensores</div>'
             
-            # 3. Creamos el Heatmap con Plotly
-            fig_heat = px.density_heatmap(
-                heatmap_data, 
-                x='hora_dia', 
-                y='dia_nombre', 
-                z='conteo', 
-                nbinsx=24, # 24 horas
-                color_continuous_scale='Inferno', # Colores estilo "fuego"
-                template="plotly_dark"
-            )
+            df_hoy = df_raw[df_raw['fecha_completa'].dt.date == datetime.now().date()]
+            radares = sorted(df['radar'].unique())
             
-            # 4. Ajustes Visuales Finos
-            fig_heat.update_layout(
-                xaxis_title="Hora del Día (00:00 - 23:00)",
-                yaxis_title=None,
-                coloraxis_colorbar_title="Infracciones"
-            )
-            # Forzamos el orden correcto de Lunes a Domingo
-            fig_heat.update_yaxes(categoryorder='array', categoryarray=['Domingo', 'Sábado', 'Viernes', 'Jueves', 'Miércoles', 'Martes', 'Lunes'])
+            for r in radares:
+                d_r = df_hoy[df_hoy['radar'] == r]
+                cnt = len(d_r)
+                is_online = cnt > 0
+                
+                # Variables
+                color = "#81c995" if is_online else "#5f6368"
+                txt = "ONLINE" if is_online else "OFFLINE"
+                bg = "rgba(129, 201, 149, 0.2)" if is_online else "rgba(255, 255, 255, 0.05)"
+                
+                # Construcción plana
+                item = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:12px; margin-bottom:8px; background:rgba(255,255,255,0.03); border-radius:12px; border-left:3px solid {color};">'
+                item += f'<div style="display:flex; flex-direction:column;"><span style="color:#e8eaed; font-weight:600; font-size:13px;">{r}</span>'
+                item += f'<span style="color:{color}; font-size:10px; letter-spacing:1px; margin-top:2px;">● {txt}</span></div>'
+                item += f'<span style="background:{bg}; color:{color}; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:bold;">{cnt}</span></div>'
+                
+                sensors_html_block += item
             
-            st.plotly_chart(fig_heat, use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"Error generando heatmap: {e}")
-        # ==========================================
+            sensors_html_block += '</div>'
+            st.markdown(sensors_html_block, unsafe_allow_html=True)
 
-    st.divider()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("📋 Últimos Registros")
-        df_display = df[['radar', 'velocidad', 'fecha_completa']].copy()
-        df_display['fecha_completa'] = df_display['fecha_completa'].dt.strftime('%Y-%m-%d %H:%M:%S')
-        st.dataframe(df_display.head(100), use_container_width=True)
-        
-        output = io.BytesIO()
-        df.to_excel(output, index=False)
-        st.download_button("📥 Exportar Reporte Excel", output.getvalue(), "reporte_radar.xlsx")
-
-    with c2:
-        st.subheader("🎥 Evidencias de Video (900GB)")
-        fecha_v = st.date_input("Día de grabación", value=hora_local.date())
-        if os.path.exists(CLIPS_DIR):
-            files = [f for f in os.listdir(CLIPS_DIR) if f.endswith(".mp4")]
-            files_f = [f for f in files if date.fromtimestamp(os.path.getmtime(os.path.join(CLIPS_DIR, f))) == fecha_v]
-            if files_f:
-                sel = st.selectbox(f"Videos ({len(files_f)})", sorted(files_f, reverse=True))
-                st.video(os.path.join(CLIPS_DIR, sel))
-            else: st.warning("No hay videos para hoy.")
-        else: st.error("Disco no accesible.")
+    # ==========================================
+    # 📝 NIVEL 4: LOGS
+    # ==========================================
+    with st.expander("📝 Ver Registro Completo", expanded=True):
+        st.dataframe(
+            df[['fecha', 'hora', 'radar', 'velocidad', 'tipo', 'placa']].head(100),
+            use_container_width=True,
+            height=300,
+            column_config={"velocidad": st.column_config.NumberColumn("Velocidad", format="%d km/h")}
+        )
 
 else:
-    st.warning("⚠️ Sin datos disponibles.")
+    st.info("Esperando datos... Sistema en línea.")
 
 time.sleep(30)
 st.rerun()
