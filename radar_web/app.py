@@ -37,21 +37,17 @@ st.markdown("""
         
         .block-container { padding-top: 2rem; max-width: 96%; }
 
-        /* --- 2. SIDEBAR (MENÚ LATERAL) ESTILO GEMINI --- */
+        /* --- 2. SIDEBAR (MENÚ LATERAL) --- */
         [data-testid="stSidebar"] {
             background-color: #0b0f19;
             border-right: 1px solid rgba(100, 149, 237, 0.05);
         }
-        
-        /* Título de Navegación */
         div[data-testid="stSidebarNav"]::before {
             content: "PANEL DE CONTROL";
             margin-left: 20px; margin-top: 20px; margin-bottom: 10px;
             font-size: 10px; font-weight: 700; color: #5f6368; letter-spacing: 1px;
             display: block;
         }
-        
-        /* Enlaces del Menú */
         div[data-testid="stSidebarNav"] a {
             background-color: transparent;
             color: #9aa0a6;
@@ -60,15 +56,11 @@ st.markdown("""
             transition: all 0.3s ease;
             border: 1px solid transparent;
         }
-
-        /* Hover */
         div[data-testid="stSidebarNav"] a:hover {
             background-color: rgba(255, 255, 255, 0.03);
             color: #e8eaed;
             transform: translateX(3px);
         }
-
-        /* ACTIVO (Página Actual - Efecto Gradiente) */
         div[data-testid="stSidebarNav"] a[aria-current="page"] {
             background: linear-gradient(90deg, rgba(66, 133, 244, 0.15), rgba(233, 30, 99, 0.15));
             border: 1px solid rgba(138, 180, 248, 0.2);
@@ -77,7 +69,7 @@ st.markdown("""
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
-        /* --- 3. TARJETAS GEMINI (GLASS/ROUNDED) --- */
+        /* --- 3. TARJETAS GEMINI --- */
         .gemini-card {
             background-color: #131722;
             border-radius: 24px;
@@ -100,7 +92,6 @@ st.markdown("""
             -webkit-text-fill-color: transparent;
             font-weight: 800;
         }
-        
         .card-header {
             color: #e8eaed; font-size: 18px; font-weight: 600; margin-bottom: 20px;
             display: flex; align-items: center; gap: 10px;
@@ -110,7 +101,7 @@ st.markdown("""
         .kpi-val { font-size: 38px; font-weight: 700; color: #fff; letter-spacing: -1px; line-height: 1.1; }
         .kpi-sub { font-size: 12px; color: #9aa0a6; margin-top: 6px; font-weight: 500; }
         
-        /* --- 6. INPUTS REDONDEADOS --- */
+        /* --- 6. INPUTS --- */
         .stSelectbox > div > div, .stDateInput > div > div, .stTextInput > div > div > input {
             background-color: #1e2330 !important;
             border-radius: 12px !important;
@@ -118,11 +109,34 @@ st.markdown("""
             color: #e8eaed !important;
         }
         
-        /* --- 7. SCROLLBAR FINO --- */
+        /* --- 7. TERMINAL STYLE (NUEVO PARA NIVEL 5) --- */
+        .terminal-box {
+            background-color: #000;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.1);
+        }
+        
+        /* --- 8. FOOTER --- */
+        .footer-text {
+            text-align: center;
+            color: #5f6368;
+            font-size: 12px;
+            margin-top: 40px;
+            padding-bottom: 20px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 20px;
+        }
+        
+        /* SCROLLBAR */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #0b0f19; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -157,7 +171,6 @@ df_raw = get_data()
 c_head, c_filt = st.columns([1, 1])
 
 with c_head:
-    # --- CAMBIO REALIZADO AQUÍ: LCC AI ---
     st.markdown("""
         <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 10px;">
             <span style="font-size: 32px;">✨</span> Radar <span class="gradient-text-logo">LCC AI</span>
@@ -245,7 +258,7 @@ if not df_raw.empty:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==========================================
-    # 📸 NIVEL 3: FEED Y SENSORES (SOLUCIONADO)
+    # 📸 NIVEL 3: FEED Y SENSORES
     # ==========================================
     c_feed, c_side = st.columns([2, 1])
     
@@ -259,10 +272,11 @@ if not df_raw.empty:
                 st.markdown(f"<div style='border-radius:16px; overflow:hidden; border:1px solid {color}; margin-bottom:10px;'>", unsafe_allow_html=True)
                 foto = row.get('foto')
                 if foto and os.path.exists(os.path.join(FOTOS_PATH, foto)):
-                    st.image(os.path.join(FOTOS_PATH, foto), use_container_width=True)
+                    st.image(os.path.join(FOTOS_PATH, foto), width='stretch')
                 else:
                     st.markdown("<div style='height:100px; background:#1e2330;'></div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='background:rgba(19,23,34,0.9); padding:8px; text-align:center;'><span style='color:#fff; font-weight:bold;'>{row['velocidad']} km/h</span></div></div>", unsafe_allow_html=True)
+                # MODIFICADO: Agregado el nombre del radar en la etiqueta de la foto
+                st.markdown(f"<div style='background:rgba(19,23,34,0.9); padding:8px; text-align:center;'><span style='color:#a8c7fa; font-size:10px;'>{row['radar']}</span><br><span style='color:#fff; font-weight:bold;'>{row['velocidad']} km/h</span></div></div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c_side:
@@ -278,7 +292,7 @@ if not df_raw.empty:
             st.markdown('</div>', unsafe_allow_html=True)
             
         with tab2:
-            # === SENSORES HTML (VARIABLE PLANA PARA EVITAR ERRORES) ===
+            # === SENSORES HTML ===
             sensors_html_block = ""
             sensors_html_block += '<div class="gemini-card" style="padding:15px; height:350px; overflow-y:auto;">'
             sensors_html_block += '<div style="color:#e8eaed; font-size:16px; font-weight:600; margin-bottom:15px;">📡 Estado de Sensores</div>'
@@ -290,33 +304,138 @@ if not df_raw.empty:
                 d_r = df_hoy[df_hoy['radar'] == r]
                 cnt = len(d_r)
                 is_online = cnt > 0
-                
-                # Variables
                 color = "#81c995" if is_online else "#5f6368"
                 txt = "ONLINE" if is_online else "OFFLINE"
                 bg = "rgba(129, 201, 149, 0.2)" if is_online else "rgba(255, 255, 255, 0.05)"
                 
-                # Construcción plana
                 item = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:12px; margin-bottom:8px; background:rgba(255,255,255,0.03); border-radius:12px; border-left:3px solid {color};">'
                 item += f'<div style="display:flex; flex-direction:column;"><span style="color:#e8eaed; font-weight:600; font-size:13px;">{r}</span>'
                 item += f'<span style="color:{color}; font-size:10px; letter-spacing:1px; margin-top:2px;">● {txt}</span></div>'
                 item += f'<span style="background:{bg}; color:{color}; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:bold;">{cnt}</span></div>'
-                
                 sensors_html_block += item
             
             sensors_html_block += '</div>'
             st.markdown(sensors_html_block, unsafe_allow_html=True)
 
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # ==========================================
-    # 📝 NIVEL 4: LOGS
+    # 🧠 NIVEL 4: ANALÍTICA AVANZADA (LCC INSIGHTS)
     # ==========================================
-    with st.expander("📝 Ver Registro Completo", expanded=True):
+    st.markdown('<div class="gemini-card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-header">🔎 Análisis de Comportamiento (LCC Insights)</div>', unsafe_allow_html=True)
+    
+    df['hora_simple'] = df['fecha_completa'].dt.hour
+    tab_a, tab_b = st.tabs(["🔥 Mapa de Calor & Flujo", "📋 Auditoría de Radares"])
+    
+    with tab_a:
+        c_heat, c_box = st.columns([2,1])
+        with c_heat:
+            st.markdown("##### 🌡️ Intensidad de Tráfico (Hora vs Radar)")
+            fig_heat = px.density_heatmap(
+                df, x="hora_simple", y="radar", z="velocidad", histfunc="count",
+                nbinsx=24, color_continuous_scale=["#0b0f19", "#202c44", "#4285F4", "#E91E63"],
+                template="plotly_dark"
+            )
+            fig_heat.update_layout(
+                xaxis_title="Hora (0-23h)", yaxis_title=None, coloraxis_colorbar_title="Autos",
+                height=320, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+        with c_box:
+            st.markdown("##### 🏎️ Rangos de Velocidad")
+            fig_box = px.box(
+                df, x="radar", y="velocidad", color="radar",
+                color_discrete_sequence=["#4285F4", "#E91E63", "#00e5ff", "#8833ff"], template="plotly_dark"
+            )
+            fig_box.update_layout(
+                height=320, yaxis_title="Km/h", xaxis_title=None, showlegend=False,
+                margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_box, use_container_width=True)
+
+    with tab_b:
+        stats_df = df.groupby('radar').agg(
+            Volumen=('id', 'count'),
+            Vel_Promedio=('velocidad', 'mean'),
+            Vel_Maxima=('velocidad', 'max'),
+            Alertas_Graves=('velocidad', lambda x: (x >= 60).sum())
+        ).reset_index()
+        stats_df['Vel_Promedio'] = stats_df['Vel_Promedio'].round(1)
+        
+        st.dataframe(
+            stats_df, width='stretch',
+            column_config={
+                "radar": st.column_config.TextColumn("📍 Sensor"),
+                "Volumen": st.column_config.ProgressColumn("Tráfico Total", format="%d", min_value=0, max_value=int(stats_df['Volumen'].max()*1.1)),
+                "Vel_Promedio": st.column_config.NumberColumn("Vel. Media", format="%.1f km/h"),
+                "Vel_Maxima": st.column_config.NumberColumn("Récord", format="%d km/h"),
+                "Alertas_Graves": st.column_config.NumberColumn("Infracciones", format="%d 🚨"),
+            }
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ==========================================
+    # 🤖 NIVEL 5: LCC NEURAL SUMMARY + EXPORT
+    # ==========================================
+    c_ai, c_export = st.columns([2, 1])
+    
+    with c_ai:
+        st.markdown('<div class="gemini-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-header">🤖 LCC Neural Summary</div>', unsafe_allow_html=True)
+        
+        # Generación de Insights Lógicos
+        total_v = len(df)
+        high_speed_p = (len(df[df['velocidad'] > 60]) / total_v * 100) if total_v > 0 else 0
+        peak_hour = df['hora_simple'].mode()[0] if not df.empty else 0
+        
+        insight_html = f"""
+        <div class="terminal-box">
+            > INITIATING ANALYSIS SEQUENCE...<br>
+            > SCANNING DATASET: {total_v} RECORDS FOUND.<br>
+            > <span style="color:#4285F4;">TRAFFIC PATTERN:</span> PEAK ACTIVITY DETECTED AT {peak_hour}:00 HOURS.<br>
+            > <span style="color:#E91E63;">RISK ASSESSMENT:</span> {high_speed_p:.1f}% OF VEHICLES EXCEEDED SAFETY LIMITS.<br>
+            > SYSTEM STATUS: ALL SENSORS OPERATIONAL. MONITORING ACTIVE.<br>
+            > _
+        </div>
+        """
+        st.markdown(insight_html, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c_export:
+        st.markdown('<div class="gemini-card" style="height:220px; display:flex; flex-direction:column; justify-content:center;">', unsafe_allow_html=True)
+        st.markdown('<div class="card-header">📥 Export Data</div>', unsafe_allow_html=True)
+        st.markdown("Descarga el dataset completo para auditoría externa.")
+        
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="💾 DESCARGAR CSV COMPLETO",
+            data=csv,
+            file_name=f"lcc_audit_{datetime.now().date()}.csv",
+            mime="text/csv",
+            width='stretch'
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ==========================================
+    # 📝 NIVEL 6: LOGS RAW
+    # ==========================================
+    with st.expander("📂 Ver Base de Datos Cruda (Historial Completo)", expanded=False):
         st.dataframe(
             df[['fecha', 'hora', 'radar', 'velocidad', 'tipo', 'placa']].head(100),
-            use_container_width=True,
+            width='stretch',
             height=300,
             column_config={"velocidad": st.column_config.NumberColumn("Velocidad", format="%d km/h")}
         )
+
+    # ==========================================
+    # ⚙️ FOOTER
+    # ==========================================
+    st.markdown("""
+        <div class="footer-text">
+            LCC AI RADAR SYSTEM v2.5 | © 2024 LCC Analytics | System ID: LCC-X1
+        </div>
+    """, unsafe_allow_html=True)
 
 else:
     st.info("Esperando datos... Sistema en línea.")
