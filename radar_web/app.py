@@ -147,7 +147,7 @@ st.markdown("""
 def get_data():
     try:
         if not os.path.exists(DB_PATH): return pd.DataFrame()
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query("SELECT * FROM historial ORDER BY id DESC LIMIT 3000", conn)
         conn.close()
         
@@ -161,7 +161,9 @@ def get_data():
         df['tipo'] = df['tipo'].fillna("N/A")
         df['placa'] = df['placa'].fillna("---")
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error al cargar datos: {e}")
+        return pd.DataFrame()
 
 df_raw = get_data()
 
