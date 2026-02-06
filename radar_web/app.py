@@ -240,7 +240,7 @@ if not df_raw.empty:
             yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="Km/h"),
             font=dict(color="#9aa0a6")
         )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.plotly_chart(fig_scatter, width="stretch")
 
     with c_summary:
         st.markdown("##### ⚡ Resumen Inteligente")
@@ -290,7 +290,7 @@ if not df_raw.empty:
             colors = ["#8ab4f8", "#f5a5c0", "#81c995", "#fdd663"]
             fig_pie = px.pie(df, names='radar', hole=0.6, color_discrete_sequence=colors)
             fig_pie.update_layout(height=220, margin=dict(t=0,b=0,l=0,r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=True, legend=dict(orientation="h", y=-0.1))
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width="stretch")
             st.markdown('</div>', unsafe_allow_html=True)
             
         with tab2:
@@ -343,7 +343,7 @@ if not df_raw.empty:
                 xaxis_title="Hora (0-23h)", yaxis_title=None, coloraxis_colorbar_title="Autos",
                 height=320, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
         with c_box:
             st.markdown("##### 🏎️ Rangos de Velocidad")
             fig_box = px.box(
@@ -354,7 +354,7 @@ if not df_raw.empty:
                 height=320, yaxis_title="Km/h", xaxis_title=None, showlegend=False,
                 margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
             )
-            st.plotly_chart(fig_box, use_container_width=True)
+            st.plotly_chart(fig_box, width="stretch")
 
     with tab_b:
         stats_df = df.groupby('radar').agg(

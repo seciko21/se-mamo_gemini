@@ -135,7 +135,7 @@ if not df_raw.empty:
             if foto_nombre and isinstance(foto_nombre, str):
                 foto_full_path = os.path.join(FOTOS_PATH, foto_nombre)
                 if os.path.exists(foto_full_path):
-                    st.image(foto_full_path, use_container_width='stretch')
+                    st.image(foto_full_path, width="stretch")
                 else:
                     st.warning("Imagen no encontrada en disco")
             else:
@@ -161,7 +161,7 @@ if not df_raw.empty:
     
     fig_mes = px.bar(df_mes, x='Mes', y='Total', color='Total', color_continuous_scale='Reds', template='plotly_dark')
     fig_mes.update_layout(height=300, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)')
-    st.plotly_chart(fig_mes, use_container_width='stretch')
+    st.plotly_chart(fig_mes, width="stretch")
     st.markdown('</div>', unsafe_allow_html=True)
 
 else:

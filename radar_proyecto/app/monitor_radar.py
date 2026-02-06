@@ -140,34 +140,49 @@ def worker_buffer_continuo(nombre_radar, ip):
     radar_path = os.path.join(BUFFER_DIR, nombre_radar)
     os.makedirs(radar_path, exist_ok=True)
     print(f"🔄 [BUFFER] Iniciando ciclo 20s para {nombre_radar}...")
+    usado_flag = os.path.join(radar_path, "buffer_usado.flag")
     
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
         dest = os.path.join(radar_path, "evidencia_20s.mp4")
         
-        # Buffer de 20 segundos (Aumentado de 20 a 30 para mejor contexto)
+        # Verificar si el buffer fue usado y necesita renovación inmediata
+        forzar_renovacion = os.path.exists(usado_flag)
+        if forzar_renovacion:
+            try:
+                os.remove(usado_flag)
+                print(f"🔄 [BUFFER] Renovando buffer usado por {nombre_radar}")
+            except:
+                pass
+        
+        # Buffer de 20 segundos
         subprocess.run([
             "ffmpeg", "-rtsp_transport", "tcp", 
             "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
             "-t", "20", "-c", "copy", "-y", tmp
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
         
-        # PROTECCIÓN CONTRA CRASH: Solo renombramos si existe
+        # Renombrar solo si existe y tiene contenido
         if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
-            try: os.rename(tmp, dest)
-            except: pass
+            try:
+                if os.path.exists(dest):
+                    os.remove(dest)  # Eliminar buffer anterior
+                os.rename(tmp, dest)
+            except OSError:
+                pass
         else:
             print(f"⚠️ [BUFFER] Fallo en {nombre_radar}. Reintentando...")
             time.sleep(5)
 
 def enviar_video_completo(radar_name, ip, speed, caption):
-    """Une el buffer (20s) con el presente (15s) = 35s Total."""
+    """Une el buffer (20s) con el presente (15s) = 35s Total y limpia el buffer usado."""
     ahora_s = datetime.now().strftime('%H%M%S')
     radar_path = os.path.join(BUFFER_DIR, radar_name)
     past_p = os.path.join(radar_path, "evidencia_20s.mp4")
     live_p = os.path.join(radar_path, f"live_{ahora_s}.mp4")
     final_p = os.path.join(VIDEO_PATH, f"{radar_name}_{speed}_{ahora_s}.mp4")
     list_p = os.path.join(radar_path, f"list_{ahora_s}.txt")
+    usado_flag = os.path.join(radar_path, "buffer_usado.flag")
 
     if not os.path.exists(past_p) or os.path.getsize(past_p) == 0:
         return # Sin buffer no hay video
@@ -178,7 +193,7 @@ def enviar_video_completo(radar_name, ip, speed, caption):
             "ffmpeg", "-rtsp_transport", "tcp", 
             "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
             "-t", "15", "-c", "copy", "-y", live_p
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
 
         if os.path.exists(live_p) and os.path.getsize(live_p) > 0:
             # 2. Unir usando lista (Fast Concat - Sin recodificar)
@@ -189,17 +204,26 @@ def enviar_video_completo(radar_name, ip, speed, caption):
             subprocess.run([
                 "ffmpeg", "-f", "concat", "-safe", "0", "-i", list_p, 
                 "-c", "copy", "-y", final_p
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
 
             # 3. Enviar
             if os.path.exists(final_p) and os.path.getsize(final_p) > 0:
                 with open(final_p, 'rb') as v: 
                     enviar_seguro("sendVideo", {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'video': v})
+                
+                # 4. Marcar buffer como usado (para que worker lo renueve)
+                with open(usado_flag, 'w') as f:
+                    f.write(datetime.now().isoformat())
+                
+                print(f"✅ [VIDEO] Enviado y buffer marcado para renovación: {radar_name}")
             
-            # Limpieza
+            # Limpieza local
             for f in [live_p, list_p]:
                 if os.path.exists(f): os.remove(f)
-    except: pass
+    except subprocess.TimeoutExpired:
+        print(f"⚠️ [VIDEO] Timeout en ffmpeg para {radar_name}")
+    except Exception as e:
+        print(f"❌ [VIDEO] Error en {radar_name}: {e}")
 
 # ==========================================
 # 5. MODO CSI (PROCESAMIENTO GRÁFICO)
@@ -273,16 +297,41 @@ def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
     while True:
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(15); s.connect((ip, puerto))
-            while True:
-                data = s.recv(1024)
-                if not data: break
-                v = 0
-                if b'\xfc\xfa' in data: v = data[data.find(b'\xfc\xfa') + 2]
-                elif b'\xfb\xfd' in data: v = data[data.find(b'\xfb\xfd') + 2]
-                if v >= 1: threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
-        except: time.sleep(10)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(15)
+                s.connect((ip, puerto))
+                print(f"✅ [SOCKET] Conectado a {nombre}")
+                while True:
+                    try:
+                        data = s.recv(1024)
+                        if not data: 
+                            print(f"⚠️ [SOCKET] Conexión cerrada por servidor: {nombre}")
+                            break
+                        # Procesar datos del radar de forma segura
+                        v = 0
+                        try:
+                            idx_fc = data.find(b'\xfc\xfa')
+                            if idx_fc >= 0 and idx_fc + 2 < len(data):
+                                v = data[idx_fc + 2]
+                            else:
+                                idx_fb = data.find(b'\xfb\xfd')
+                                if idx_fb >= 0 and idx_fb + 2 < len(data):
+                                    v = data[idx_fb + 2]
+                        except IndexError:
+                            pass  # Buffer incompleto, ignorar
+                        if v >= 1: 
+                            threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
+                    except socket.timeout:
+                        continue  # Reintentar recv
+                    except OSError as e:
+                        print(f"❌ [SOCKET] Error en recv {nombre}: {e}")
+                        break
+        except (socket.timeout, ConnectionRefusedError, OSError) as e:
+            print(f"⚠️ [SOCKET] Error de conexión {nombre}: {e}")
+            time.sleep(10)
+        except Exception as e:
+            print(f"❌ [SOCKET] Error inesperado {nombre}: {e}")
+            time.sleep(30)
 
 if __name__ == "__main__":
     init_db()

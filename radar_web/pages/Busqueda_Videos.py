@@ -167,7 +167,7 @@ with col_db:
     
     st.markdown(f'<div class="smart-header"><div class="header-title">⚡ Timeline de Eventos</div>{badges}</div>', unsafe_allow_html=True)
     if not df_events.empty:
-        st.dataframe(df_events[['hora', 'velocidad', 'radar', 'tipo', 'placa']], use_container_width=True, height=450,
+        st.dataframe(df_events[['hora', 'velocidad', 'radar', 'tipo', 'placa']], width="stretch", height=450,
                      column_config={"velocidad": st.column_config.NumberColumn("Velocidad", format="%d km/h")})
     else: st.info(f"No hay registros superiores a {velocidad_min} km/h.")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -186,7 +186,7 @@ with col_vid:
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             with open(ruta, "rb") as f:
-                st.download_button("💾 DESCARGAR EVIDENCIA", f, video_sel, "video/mp4", use_container_width=True)
+                st.download_button("💾 DESCARGAR EVIDENCIA", f, video_sel, "video/mp4", width="stretch")
         else: st.error("Archivo no encontrado en disco.")
     else: st.warning("No hay videos disponibles.")
     st.markdown('</div>', unsafe_allow_html=True)

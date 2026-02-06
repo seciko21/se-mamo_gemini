@@ -168,7 +168,7 @@ if not df_show.empty:
     with k4:
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         csv = df_show.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 DESCARGAR REPORTE", csv, f"reporte_{hoy}.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 DESCARGAR REPORTE", csv, f"reporte_{hoy}.csv", "text/csv", width="stretch")
 
 # Galería
 st.markdown("<br>", unsafe_allow_html=True)
@@ -196,7 +196,7 @@ else:
             """, unsafe_allow_html=True)
             foto = row.get('foto')
             if foto and os.path.exists(os.path.join(FOTOS_DIR, foto)):
-                st.image(os.path.join(FOTOS_DIR, foto), use_container_width=True)
+                st.image(os.path.join(FOTOS_DIR, foto), width="stretch")
             else:
                 st.markdown("<div style='height:150px; background:#111;'></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
