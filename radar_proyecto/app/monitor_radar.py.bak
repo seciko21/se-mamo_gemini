@@ -295,53 +295,37 @@ def procesar_deteccion(radar_name, ip, speed):
 
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
-    data_buffer = b""  # Buffer para datos fragmentados
-    
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(15)
                 s.connect((ip, puerto))
                 print(f"✅ [SOCKET] Conectado a {nombre}")
-                data_buffer = b""  # Limpiar buffer al reconectar
-                
                 while True:
                     try:
-                        data_raw = s.recv(1024)  # Recibir hasta 1KB
-                        
-                        if not data_raw:
+                        data = s.recv(1024)
+                        if not data: 
                             print(f"⚠️ [SOCKET] Conexión cerrada por servidor: {nombre}")
                             break
-                        
-                        # Acumular datos en el buffer
-                        data_buffer += data_raw
-                        
-                        # Procesar todos los paquetes completos (4 bytes)
-                        while len(data_buffer) >= 4:
-                            packet = data_buffer[:4]
-                            data_buffer = data_buffer[4:]
-                            
-                            # Procesar paquete de 4 bytes - IGUAL A radar_tcp_reader.py
-                            v = 0
-                            try:
-                                # Buscar patrón fcfa (ENTRADA)
-                                if packet[:2] == b'\xfc\xfa':
-                                    v = packet[2]
-                                # Buscar patrón fbfd (SALIDA)
-                                elif packet[:2] == b'\xfb\xfd':
-                                    v = packet[2]
-                            except (IndexError, TypeError):
-                                pass
-                            
-                            if v >= 1:
-                                threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
-                                
+                        # Procesar datos del radar de forma segura
+                        v = 0
+                        try:
+                            idx_fc = data.find(b'\xfc\xfa')
+                            if idx_fc >= 0 and idx_fc + 2 < len(data):
+                                v = data[idx_fc + 2]
+                            else:
+                                idx_fb = data.find(b'\xfb\xfd')
+                                if idx_fb >= 0 and idx_fb + 2 < len(data):
+                                    v = data[idx_fb + 2]
+                        except IndexError:
+                            pass  # Buffer incompleto, ignorar
+                        if v >= 1: 
+                            threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
                     except socket.timeout:
                         continue  # Reintentar recv
                     except OSError as e:
                         print(f"❌ [SOCKET] Error en recv {nombre}: {e}")
                         break
-                        
         except (socket.timeout, ConnectionRefusedError, OSError) as e:
             print(f"⚠️ [SOCKET] Error de conexión {nombre}: {e}")
             time.sleep(10)
