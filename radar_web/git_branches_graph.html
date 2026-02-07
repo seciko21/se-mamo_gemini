@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Git Branches Graph - se-mamo_gemini</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        h1 { color: #61dafb; }
+        .branch { padding: 5px 10px; margin: 3px; border-radius: 4px; display: inline-block; font-size: 12px; }
+        .main { background: #238636; color: white; }
+        .pruebas { background: #8250df; color: white; }
+        .produccion { background: #d29922; color: black; }
+        .feature { background: #1f6feb; color: white; }
+        .dev { background: #db61a2; color: white; }
+        .commit { padding: 8px; margin: 5px 0; border-left: 3px solid #58a6ff; background: #2d2d2d; }
+        .tag { background: #f0883e; color: black; padding: 2px 6px; border-radius: 3px; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🌳 Git Branches Graph - se-mamo_gemini</h1>
+    
+    <div style="margin-bottom: 20px;">
+        <span class="branch main">main</span>
+        <span class="branch pruebas">pruebas</span>
+        <span class="branch produccion">produccion_v6.2</span>
+        <span class="branch feature">feature/galeria-visual</span>
+        <span class="branch dev">dev-claudbot-v5.7</span>
+        <span class="branch produccion">produccion_060226_1840</span>
+    </div>
+
+    <h2>📜 Commits Recientes</h2>
+    
+    <div class="commit">
+        <strong>6840b32</strong> <span class="tag">HEAD</span> <span class="tag">produccion_060226_1840</span><br>
+        Produccion 06/02/26 18:40 hrs - Sincronizacion con radar_tcp_reader.py (ultimos cambios)
+    </div>
+    
+    <div class="commit">
+        <strong>ead18c1</strong> <span class="tag">pruebas</span> <span class="tag">pruebas-nuevas</span> <span class="tag">v060226_1840</span><br>
+        edicion-kilo
+    </div>
+    
+    <div class="commit">
+        <strong>9a30efc</strong><br>
+        Descripción de tus cambios
+    </div>
+    
+    <div class="commit">
+        <strong>567bfb7</strong><br>
+        prp
+    </div>
+    
+    <div class="commit">
+        <strong>ec90aa9</strong> <span class="tag">produccion_v6.2</span><br>
+        Actualización: Interfaz LCC AI Dark Mode finalizada
+    </div>
+    
+    <div class="commit">
+        <strong>13dfc04</strong> <span class="tag">main</span><br>
+        manteminiemto basico
+    </div>
+    
+    <div class="commit">
+        <strong>bbd9b94</strong><br>
+        sticker bot
+    </div>
+    
+    <div class="commit">
+        <strong>5bf87b1</strong><br>
+        REFACTOR FINAL: Todo movido a raiz v5.9.8 Stable
+    </div>
+    
+    <div class="commit">
+        <strong>4d41be4</strong> <span class="tag">v5.7.2</span> <span class="tag">dev-claudbot-v5.7</span><br>
+        RELEASE v5.7.2: Video Instantáneo 30s, IA en Bot y Reportes SQL Corregidos
+    </div>
+    
+    <div class="commit">
+        <strong>9af5d90</strong> <span class="tag">feature-clawdbot</span><br>
+        v4.5 Estable: Modo CSI + Texto Abajo + Buffer Video
+    </div>
+
+    <h2>📊 Resumen de Ramas</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr style="background: #333;">
+            <th style="padding: 10px;">Rama</th>
+            <th style="padding: 10px;">Último Commit</th>
+            <th style="padding: 10px;">Descripción</th>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch main">main</span></td>
+            <td>13dfc04</td>
+            <td>Rama principal - mantenimiento básico</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch pruebas">pruebas</span></td>
+            <td>ead18c1</td>
+            <td>Rama de pruebas actual</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch produccion">produccion_v6.2</span></td>
+            <td>ec90aa9</td>
+            <td>Producción v6.2 - Dark Mode</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch produccion">produccion_060226_1840</span></td>
+            <td>6840b32</td>
+            <td>Nueva producción - Sincronización radar_tcp_reader</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch feature">feature/galeria-visual</span></td>
+            <td>0b80f66</td>
+            <td>Galería visual</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><span class="branch dev">dev-claudbot-v5.7</span></td>
+            <td>4d41be4</td>
+            <td>Desarrollo v5.7</td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -87,13 +87,17 @@ st.markdown("""
 
         /* --- 4. TYPOGRAPHY & GRADIENTS --- */
         .gradient-text-logo {
-            background: linear-gradient(90deg, #8ab4f8, #f5a5c0, #e8eaed);
+            background: linear-gradient(90deg, #4285F4, #9C27B0, #E91E63, #00BCD4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
+            filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.5));
         }
         .card-header {
-            color: #e8eaed; font-size: 18px; font-weight: 600; margin-bottom: 20px;
+            background: linear-gradient(90deg, #8ab4f8, #c084fc, #f5a5c0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 18px; font-weight: 700; margin-bottom: 20px;
             display: flex; align-items: center; gap: 10px;
         }
 

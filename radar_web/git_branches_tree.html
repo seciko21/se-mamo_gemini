@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Git Branches Tree - se-mamo_gemini</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 { 
+            text-align: center; 
+            color: #00d9ff; 
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(0, 217, 255, 0.5);
+        }
+        .tree-container {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        .tree {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .level {
+            display: flex;
+            justify-content: center;
+            position: relative;
+            margin: 10px 0;
+        }
+        .node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 20px;
+            position: relative;
+        }
+        .commit-hash {
+            background: #2d3748;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #68d391;
+            border: 1px solid #4a5568;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .commit-hash:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(104, 211, 145, 0.4);
+        }
+        .commit-message {
+            margin-top: 8px;
+            font-size: 11px;
+            color: #a0aec0;
+            text-align: center;
+            max-width: 200px;
+            word-wrap: break-word;
+        }
+        .branch-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        .tag-version {
+            background: #ed8936;
+            color: #1a202c;
+        }
+        .tag-head {
+            background: #f56565;
+            color: white;
+        }
+        .tag-branch-main { background: #48bb78; color: white; }
+        .tag-branch-pruebas { background: #9f7aea; color: white; }
+        .tag-branch-produccion { background: #ecc94b; color: #1a202c; }
+        .tag-branch-feature { background: #4299e1; color: white; }
+        .tag-branch-dev { background: #ed64a6; color: white; }
+        
+        .connector {
+            width: 2px;
+            height: 20px;
+            background: #4a5568;
+        }
+        .horizontal-line {
+            position: absolute;
+            height: 2px;
+            background: #4a5568;
+            top: -10px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌳 Árbol de Ramas Git - se-mamo_gemini</h1>
+    
+    <div class="tree-container">
+        <div class="tree">
+            <!-- Nivel 0 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">6458a52</div>
+                    <div class="commit-message">First commit</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 1 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">e2cf92e</div>
+                    <div class="commit-message">Se-mamo unificado</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 2 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">1f28246</div>
+                    <div class="commit-message">Despliegue unificado</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 3 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">63b3b99</div>
+                    <div class="commit-message">ver1</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 4 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">877dea4</div>
+                    <div class="commit-message">IA asíncrona</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 5 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">c51193b</div>
+                    <div class="commit-message">Video Robusto</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 6 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">9af5d90 <span class="branch-tag tag-branch-dev">feature-clawdbot</span></div>
+                    <div class="commit-message">v4.5 Modo CSI</div>
+                </div>
+            </div>
+            
+            <div class="connector"></div>
+            
+            <!-- Nivel 7 - Bifurcación -->
+            <div class="level">
+                <!-- Rama dev-claudbot -->
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">4d41be4 <span class="branch-tag tag-version">v5.7.2</span> <span class="branch-tag tag-branch-dev">dev-claudbot</span></div>
+                    <div class="commit-message">Video Instantáneo 30s</div>
+                </div>
+                
+                <!-- Rama main/pruebas -->
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">5bf87b1</div>
+                    <div class="commit-message">v5.9.8 Stable</div>
+                </div>
+            </div>
+            
+            <!-- Nivel 8 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">c17c1a0</div>
+                    <div class="commit-message">versión 5.0</div>
+                </div>
+                <div class="node">
+                    <div class="commit-hash">bbd9b94</div>
+                    <div class="commit-message">sticker bot</div>
+                </div>
+                <div class="node">
+                    <div class="commit-hash">86c480a</div>
+                    <div class="commit-message">ver 5.12</div>
+                </div>
+                <div class="node">
+                    <div class="commit-hash">14cea12</div>
+                    <div class="commit-message">Clawdbot v5.7</div>
+                </div>
+            </div>
+            
+            <!-- Nivel 9 -->
+            <div class="level">
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">a673461</div>
+                    <div class="commit-message">YOLOv8</div>
+                </div>
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">13dfc04 <span class="branch-tag tag-branch-main">main</span></div>
+                    <div class="commit-message">mantenimiento</div>
+                </div>
+            </div>
+            
+            <!-- Nivel 10 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">a8e4e96 <span class="branch-tag tag-branch-feature">feature/galeria</span></div>
+                    <div class="commit-message">Dashboard Visual</div>
+                </div>
+                <div class="node">
+                    <div class="commit-hash">0b80f66</div>
+                    <div class="commit-message">estable</div>
+                </div>
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">ec90aa9 <span class="branch-tag tag-branch-produccion">produccion_v6.2</span></div>
+                    <div class="commit-message">Dark Mode</div>
+                </div>
+            </div>
+            
+            <!-- Nivel 11 -->
+            <div class="level">
+                <div class="node">
+                    <div class="commit-hash">567bfb7</div>
+                    <div class="commit-message">prp</div>
+                </div>
+                <div class="node">
+                    <div class="commit-hash">9a30efc</div>
+                    <div class="commit-message">Descripción cambios</div>
+                </div>
+            </div>
+            
+            <!-- Nivel 12 - HEAD actual -->
+            <div class="level">
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">ead18c1 <span class="branch-tag tag-branch-pruebas">pruebas</span> <span class="branch-tag tag-version">v060226</span></div>
+                    <div class="commit-message">edicion-kilo</div>
+                </div>
+                <div class="node">
+                    <div class="connector"></div>
+                    <div class="commit-hash">6840b32 <span class="branch-tag tag-head">HEAD</span> <span class="branch-tag tag-branch-produccion">produccion_060226_1840</span></div>
+                    <div class="commit-message">Sincronizacion radar_tcp_reader</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-color" style="background: #48bb78;"></div>
+            <span>main</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #9f7aea;"></div>
+            <span>pruebas</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ecc94b;"></div>
+            <span>producción</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4299e1;"></div>
+            <span>feature</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ed64a6;"></div>
+            <span>dev</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #f56565;"></div>
+            <span>HEAD</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ed8936;"></div>
+            <span>tags</span>
+        </div>
+    </div>
+</body>
+</html>

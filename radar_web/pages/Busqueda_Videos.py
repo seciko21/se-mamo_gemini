@@ -95,8 +95,9 @@ st.markdown("""
         }
         
         .gradient-text-logo {
-            background: linear-gradient(90deg, #8ab4f8, #f5a5c0, #e8eaed);
+            background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;
+            filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.5));
         }
     </style>
 """, unsafe_allow_html=True)

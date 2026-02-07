@@ -71,8 +71,9 @@ st.markdown("""
 
         /* --- 4. TEXTOS Y GRADIENTES --- */
         .gradient-text-alert {
-            background: linear-gradient(90deg, #ff9a9e, #fecfef, #f5576c);
+            background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;
+            filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
         }
         
         /* --- 5. TARJETAS DE EVIDENCIA --- */

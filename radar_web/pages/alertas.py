@@ -45,11 +45,12 @@ st.markdown("""
         }
 
         .alert-header {
-            background: linear-gradient(90deg, #ff5252, #f5a5c0, #e8eaed);
+            background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
             font-size: 32px;
+            filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
         }
 
         .kpi-val { font-size: 38px; font-weight: 700; color: #fff; letter-spacing: -1px; }
