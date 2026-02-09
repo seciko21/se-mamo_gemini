@@ -45,12 +45,24 @@ st.markdown("""
         }
 
         .alert-header {
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        
+        .alert-title {
             background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
-            font-size: 32px;
+            font-size: 42px;
             filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
+        }
+        
+        .alert-icon {
+            font-size: 42px;
+            filter: drop-shadow(0 0 10px rgba(255, 82, 82, 0.6));
+            margin-right: 12px;
         }
 
         .kpi-val { font-size: 38px; font-weight: 700; color: #fff; letter-spacing: -1px; }
@@ -91,7 +103,7 @@ df_raw = get_alert_data()
 # ==========================================
 # 🖥️ HEADER Y FILTROS
 # ==========================================
-st.markdown('<div class="alert-header">🚨 Monitor de Alertas Activas</div>', unsafe_allow_html=True)
+st.markdown('<div><span class="alert-icon">🚨</span><span class="alert-title">Monitor de Alertas Activas</span></div>', unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 if not df_raw.empty:
