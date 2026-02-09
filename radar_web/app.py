@@ -86,12 +86,22 @@ st.markdown("""
         }
 
         /* --- 4. TYPOGRAPHY & GRADIENTS --- */
-        .gradient-text-logo {
-            background: linear-gradient(90deg, #4285F4, #9C27B0, #E91E63, #00BCD4);
+        .gradient-title {
+            background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
-            filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.5));
+            font-size: 48px;
+            filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
+            margin: 0;
+            display: inline;
+        }
+        
+        .gradient-icon {
+            font-size: 56px;
+            filter: drop-shadow(0 0 12px rgba(66, 133, 244, 0.6));
+            margin-right: 15px;
+            vertical-align: middle;
         }
         .card-header {
             background: linear-gradient(90deg, #8ab4f8, #c084fc, #f5a5c0);
@@ -177,11 +187,12 @@ df_raw = get_data()
 c_head, c_filt = st.columns([1, 1])
 
 with c_head:
-    st.markdown("""
-        <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 10px;">
-            <span style="font-size: 32px;">✨</span> Radar <span class="gradient-text-logo">LCC AI</span>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown('''
+    <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+        <span class="gradient-icon">✨</span>
+        <span class="gradient-title">Radar LCC AI</span>
+    </div>
+    ''' , unsafe_allow_html=True)
 
 if not df_raw.empty:
     df = df_raw.copy()

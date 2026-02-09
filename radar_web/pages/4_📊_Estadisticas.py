@@ -51,10 +51,22 @@ st.markdown("""
         }
 
         /* --- HEADER --- */
-        .gradient-text-stats {
-            background: linear-gradient(90deg, #4285F4, #00BCD4, #9C27B0);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;
-            filter: drop-shadow(0 0 8px rgba(66, 180, 248, 0.4));
+        .gradient-title {
+            background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            font-size: 48px;
+            filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
+            margin: 0;
+            display: inline;
+        }
+        
+        .gradient-icon {
+            font-size: 56px;
+            filter: drop-shadow(0 0 12px rgba(66, 133, 244, 0.6));
+            margin-right: 15px;
+            vertical-align: middle;
         }
 
         /* --- KPI --- */
@@ -218,11 +230,12 @@ def render_custom_table(df):
 # ==========================================
 # 🖥️ HEADER
 # ==========================================
-st.markdown("""
-    <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 20px;">
-        <span style="font-size: 32px;">📊</span> Panel de <span class="gradient-text-stats">Estadísticas</span>
+st.markdown('''
+    <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+        <span class="gradient-icon">📊</span>
+        <span class="gradient-title">Estadísticas</span>
     </div>
-""", unsafe_allow_html=True)
+    ''' , unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 df = obtener_datos_historial()

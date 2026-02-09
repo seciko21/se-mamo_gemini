@@ -70,10 +70,22 @@ st.markdown("""
         }
 
         /* --- 4. TEXTOS Y GRADIENTES --- */
-        .gradient-text-alert {
+        .gradient-title {
             background: linear-gradient(90deg, #4285F4, #E91E63, #9C27B0, #00BCD4);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            font-size: 48px;
             filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.4));
+            margin: 0;
+            display: inline;
+        }
+        
+        .gradient-icon {
+            font-size: 56px;
+            filter: drop-shadow(0 0 12px rgba(66, 133, 244, 0.6));
+            margin-right: 15px;
+            vertical-align: middle;
         }
         
         /* --- 5. TARJETAS DE EVIDENCIA --- */
@@ -124,11 +136,12 @@ def cargar_graves(fecha_inicio, fecha_fin):
 # ==========================================
 # 🖥️ UI
 # ==========================================
-st.markdown("""
-    <div style="font-size: 26px; font-weight: 600; color: white; margin-bottom: 20px;">
-        <span style="font-size: 32px;">🚨</span> Monitor de <span class="gradient-text-alert">Infracciones Graves</span>
+st.markdown('''
+    <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+        <span class="gradient-icon">🚨</span>
+        <span class="gradient-title">Infracciones Graves</span>
     </div>
-""", unsafe_allow_html=True)
+    ''' , unsafe_allow_html=True)
 
 with st.container():
     st.markdown('<div class="gemini-card" style="padding: 15px;">', unsafe_allow_html=True)
