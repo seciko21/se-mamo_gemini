@@ -1,11 +1,15 @@
 import socket, time, requests, os, subprocess, threading, sqlite3, json, cv2, re
 import easyocr
 import logging
+import warnings
 import numpy as np
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from config import *
 from ultralytics import YOLO
+
+# Silenciar warnings de PyTorch DataLoader (pin_memory sin GPU)
+warnings.filterwarnings('ignore', message=".*pin_memory.*argument.*set.*true.*no accelerator.*")
 
 # ==========================================
 # 1. ENTORNO Y CARGA DE MODELOS (IA)
@@ -141,6 +145,11 @@ def worker_buffer_continuo(nombre_radar, ip):
     os.makedirs(radar_path, exist_ok=True)
     print(f"🔄 [BUFFER] Iniciando ciclo 20s para {nombre_radar}...")
     usado_flag = os.path.join(radar_path, "buffer_usado.flag")
+    rtsp_url = f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp"
+    
+    # Contador de fallos consecutivos
+    fallos_consecutivos = 0
+    MAX_FALLOS = 5
     
     while True:
         tmp = os.path.join(radar_path, "buffer_raw.mp4")
@@ -155,12 +164,29 @@ def worker_buffer_continuo(nombre_radar, ip):
             except:
                 pass
         
-        # Buffer de 20 segundos
-        subprocess.run([
-            "ffmpeg", "-rtsp_transport", "tcp", 
-            "-i", f"rtsp://{USER}:{PASS}@{ip}/axis-media/media.amp", 
-            "-t", "20", "-c", "copy", "-y", tmp
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        # Buffer de 20 segundos con manejo de timeout
+        try:
+            result = subprocess.run([
+                "ffmpeg", "-rtsp_transport", "tcp", 
+                "-i", rtsp_url, 
+                "-t", "20", "-c", "copy", "-y", tmp
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)  # Timeout reducido a 30s
+            
+            fallos_consecutivos = 0  # Resetear contador si éxito
+            
+        except subprocess.TimeoutExpired:
+            fallos_consecutivos += 1
+            print(f"⚠️ [BUFFER] Timeout en {nombre_radar} (fallo #{fallos_consecutivos}/{MAX_FALLOS})")
+            if fallos_consecutivos >= MAX_FALLOS:
+                print(f"❌ [BUFFER] Demasiados timeouts para {nombre_radar}, esperando 60s...")
+                time.sleep(60)
+                fallos_consecutivos = 0
+            continue
+        except Exception as e:
+            fallos_consecutivos += 1
+            print(f"❌ [BUFFER] Error en {nombre_radar}: {e} (fallo #{fallos_consecutivos})")
+            time.sleep(5)
+            continue
         
         # Renombrar solo si existe y tiene contenido
         if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
@@ -295,7 +321,8 @@ def procesar_deteccion(radar_name, ip, speed):
 
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
-    data_buffer = b""  # Buffer para datos fragmentados
+    data_buffer = b""  # Buffer para datos fragmentados (bytes, no str)
+    packet_count = 0  # Contador de packets procesados
     
     while True:
         try:
@@ -304,6 +331,7 @@ def escuchar_radar(nombre, ip, puerto):
                 s.connect((ip, puerto))
                 print(f"✅ [SOCKET] Conectado a {nombre}")
                 data_buffer = b""  # Limpiar buffer al reconectar
+                packet_count = 0
                 
                 while True:
                     try:
@@ -313,33 +341,44 @@ def escuchar_radar(nombre, ip, puerto):
                             print(f"⚠️ [SOCKET] Conexión cerrada por servidor: {nombre}")
                             break
                         
-                        # Acumular datos en el buffer
+                        # Acumular datos en el buffer (data_raw ya es bytes)
                         data_buffer += data_raw
                         
                         # Procesar todos los paquetes completos (4 bytes)
                         while len(data_buffer) >= 4:
                             packet = data_buffer[:4]
                             data_buffer = data_buffer[4:]
+                            packet_count += 1
                             
                             # Procesar paquete de 4 bytes - IGUAL A radar_tcp_reader.py
                             v = 0
                             try:
+                                # packet ya es bytes, convertir headers a bytes para comparación
+                                header_in = b'\xfc\xfa'
+                                header_out = b'\xfb\xfd'
+                                
                                 # Buscar patrón fcfa (ENTRADA)
-                                if packet[:2] == b'\xfc\xfa':
+                                if packet[:2] == header_in:
                                     v = packet[2]
                                 # Buscar patrón fbfd (SALIDA)
-                                elif packet[:2] == b'\xfb\xfd':
+                                elif packet[:2] == header_out:
                                     v = packet[2]
                             except (IndexError, TypeError):
                                 pass
                             
                             if v >= 1:
+                                print(f"📡 [{nombre}] Velocidad detectada: {v} km/h (packet #{packet_count})")
                                 threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
+                            
+                            # Loggear si hay datos residuales
+                            if len(data_buffer) > 0 and len(data_buffer) < 4:
+                                print(f"💾 [{nombre}] Buffer parcial: {len(data_buffer)} bytes acumulados")
                                 
                     except socket.timeout:
                         continue  # Reintentar recv
                     except OSError as e:
                         print(f"❌ [SOCKET] Error en recv {nombre}: {e}")
+                        data_buffer = b""  # Limpiar buffer en caso de error
                         break
                         
         except (socket.timeout, ConnectionRefusedError, OSError) as e:
