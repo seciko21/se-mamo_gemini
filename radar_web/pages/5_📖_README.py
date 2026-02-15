@@ -1,10 +1,30 @@
 import streamlit as st
+import sys
 from datetime import datetime
 
 # ==========================================
-# 🛑 CONFIGURACIÓN DE PÁGINA
+# 🔐 AUTENTICACIÓN (Página privada - requiere login)
+# ==========================================
+sys.path.append('..')
+import auth
+auth.init_session()
+
+# Verificar autenticación - si no está logueado, mostrar login y detener
+if not auth.is_authenticated():
+    auth.show_login_form()
+    st.stop()
+
+# ==========================================
+# � CONFIGURACIÓN DE PÁGINA
 # ==========================================
 st.set_page_config(page_title="README - LCC AI Radar", page_icon="📖", layout="wide")
+
+# Sidebar con usuario
+with st.sidebar:
+    st.markdown(f"👤 **{auth.get_username()}** ({auth.get_role()})")
+    if st.button("🚪 Cerrar Sesión"):
+        auth.logout()
+        st.rerun()
 
 # ==========================================
 # ✨ CSS MAESTRO: ESTILO GEMINI DARK + SIDEBAR

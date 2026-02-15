@@ -2,9 +2,17 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
+import sys
 import plotly.express as px
 from datetime import datetime, date, timedelta
 import time
+
+# ==========================================
+# 🔐 AUTENTICACIÓN (Páginas públicas)
+# ==========================================
+sys.path.append('..')
+import auth
+auth.init_session()
 
 # ==========================================
 # 🛑 CONFIGURACIÓN DEL SISTEMA
@@ -15,6 +23,16 @@ st.set_page_config(
     page_icon="🚨", 
     initial_sidebar_state="expanded"
 )
+
+# Sidebar auth
+with st.sidebar:
+    if auth.is_authenticated():
+        st.markdown(f"👤 **{auth.get_username()}**")
+        if st.button("🚪 Cerrar Sesión"):
+            auth.logout()
+            st.rerun()
+    else:
+        st.info("🔓 Sin iniciar sesión")
 
 OFFSET_HORAS = 0
 

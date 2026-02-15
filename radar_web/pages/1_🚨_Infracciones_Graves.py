@@ -6,9 +6,27 @@ import time
 from datetime import datetime, timedelta
 
 # ==========================================
-# 🛑 CONFIGURACIÓN DE PÁGINA
+# 🔐 AUTENTICACIÓN (Páginas públicas)
+# ==========================================
+import sys
+sys.path.append('..')
+import auth
+auth.init_session()
+
+# ==========================================
+# � CONFIGURACIÓN DE PÁGINA
 # ==========================================
 st.set_page_config(page_title="Infracciones Graves", page_icon="🚨", layout="wide")
+
+# Sidebar auth
+with st.sidebar:
+    if auth.is_authenticated():
+        st.markdown(f"👤 **{auth.get_username()}**")
+        if st.button("🚪 Cerrar Sesión"):
+            auth.logout()
+            st.rerun()
+    else:
+        st.info("🔓 Sin iniciar sesión")
 
 # RUTAS
 DB_PATH = '/app/data_folder/cola_mensajes.db'

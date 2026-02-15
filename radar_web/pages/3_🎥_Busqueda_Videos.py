@@ -2,13 +2,31 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
+import sys
 import glob
 from datetime import datetime, timedelta, date
+
+# ==========================================
+# 🔐 AUTENTICACIÓN (Páginas públicas)
+# ==========================================
+sys.path.append('..')
+import auth
+auth.init_session()
 
 # ==========================================
 # 🛑 CONFIGURACIÓN DE PÁGINA
 # ==========================================
 st.set_page_config(page_title="Video Evidence Search", layout="wide", page_icon="🎥")
+
+# Sidebar auth
+with st.sidebar:
+    if auth.is_authenticated():
+        st.markdown(f"👤 **{auth.get_username()}**")
+        if st.button("🚪 Cerrar Sesión"):
+            auth.logout()
+            st.rerun()
+    else:
+        st.info("🔓 Sin iniciar sesión")
 
 # RUTAS
 DB_PATH = '/app/data_folder/cola_mensajes.db'

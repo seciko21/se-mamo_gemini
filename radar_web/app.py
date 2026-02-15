@@ -7,6 +7,32 @@ from datetime import datetime, date, timedelta
 import time
 
 # ==========================================
+# 🔐 AUTENTICACIÓN
+# ==========================================
+import auth
+auth.init_session()
+
+# Las páginas públicas no requieren login
+PUBLIC_PAGES = [
+    "app.py",
+    "1_🚨_Infracciones_Graves.py",
+    "2_🎯_alertas.py", 
+    "3_🎥_Busqueda_Videos.py",
+    "4_📊_Estadisticas.py"
+]
+
+# Verificar si es página pública
+def is_public_page():
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        ctx = get_script_run_ctx()
+        if ctx and ctx.script_path:
+            return os.path.basename(ctx.script_path) in PUBLIC_PAGES
+    except:
+        pass
+    return True  # Por defecto público
+
+# ==========================================
 # 🛑 CONFIGURACIÓN DEL SISTEMA
 # ==========================================
 st.set_page_config(
@@ -17,6 +43,24 @@ st.set_page_config(
 )
 
 OFFSET_HORAS = -0
+
+# ==========================================
+# 🔐 SIDEBAR DE AUTENTICACIÓN
+# ==========================================
+if not is_public_page() and not auth.is_authenticated():
+    auth.show_login_form()
+else:
+    # Mostrar botón de login/logout en sidebar
+    with st.sidebar:
+        st.markdown("--- ")
+        if auth.is_authenticated():
+            st.markdown(f"👤 **Usuario:** {auth.get_username()}")
+            st.markdown(f"🔖 **Rol:** {auth.get_role()}")
+            if st.button("🚪 Cerrar Sesión"):
+                auth.logout()
+                st.rerun()
+        else:
+            st.info("🔓 Modo público - Sin iniciar sesión")
 
 # RUTAS (Prioridad Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'

@@ -1,5 +1,17 @@
 import streamlit as st
 import os
+import sys
+
+# ==========================================
+# 🔐 AUTENTICACIÓN (Página privada - requiere login)
+# ==========================================
+sys.path.append('..')
+import auth
+auth.init_session()
+
+if not auth.is_authenticated():
+    auth.show_login_form()
+    st.stop()
 
 # ==========================================
 # 🛑 CONFIGURACIÓN DE PÁGINA
@@ -10,6 +22,12 @@ st.set_page_config(
     page_icon="🌌", 
     initial_sidebar_state="collapsed"
 )
+
+with st.sidebar:
+    st.markdown(f"👤 **{auth.get_username()}** ({auth.get_role()})")
+    if st.button("🚪 Cerrar Sesión"):
+        auth.logout()
+        st.rerun()
 
 # ==========================================
 # ✨ CSS MAESTRO: GEMINI DARK + ESTRELLAS

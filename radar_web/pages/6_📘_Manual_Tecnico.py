@@ -1,9 +1,27 @@
 import streamlit as st
+import sys
+
+# ==========================================
+# 🔐 AUTENTICACIÓN (Página privada - requiere login)
+# ==========================================
+sys.path.append('..')
+import auth
+auth.init_session()
+
+if not auth.is_authenticated():
+    auth.show_login_form()
+    st.stop()
 
 # ==========================================
 # 🛑 CONFIGURACIÓN DE PÁGINA
 # ==========================================
 st.set_page_config(page_title="Manual Técnico - LCC AI Radar", page_icon="📘", layout="wide")
+
+with st.sidebar:
+    st.markdown(f"👤 **{auth.get_username()}** ({auth.get_role()})")
+    if st.button("🚪 Cerrar Sesión"):
+        auth.logout()
+        st.rerun()
 
 # ==========================================
 # ✨ CSS MAESTRO: ESTILO GEMINI DARK + SIDEBAR
