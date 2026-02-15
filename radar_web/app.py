@@ -45,22 +45,14 @@ st.set_page_config(
 OFFSET_HORAS = -0
 
 # ==========================================
-# 🔐 SIDEBAR DE AUTENTICACIÓN
+# 🔐 BOTÓN DE LOGIN - ESQUINA SUPERIOR DERECHA
 # ==========================================
-if not is_public_page() and not auth.is_authenticated():
-    auth.show_login_form()
-else:
-    # Mostrar botón de login/logout en sidebar
-    with st.sidebar:
-        st.markdown("--- ")
-        if auth.is_authenticated():
-            st.markdown(f"👤 **Usuario:** {auth.get_username()}")
-            st.markdown(f"🔖 **Rol:** {auth.get_role()}")
-            if st.button("🚪 Cerrar Sesión"):
-                auth.logout()
-                st.rerun()
-        else:
-            st.info("🔓 Modo público - Sin iniciar sesión")
+auth.show_top_right_login()
+
+# ==========================================
+# 📋 SIDEBAR DE NAVEGACIÓN
+# ==========================================
+auth.show_sidebar_navigation()
 
 # RUTAS (Prioridad Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'

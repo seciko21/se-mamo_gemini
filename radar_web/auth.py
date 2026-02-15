@@ -15,8 +15,8 @@ if not os.path.exists(USERS_FILE):
 
 # Usuarios por defecto (puede擴充)
 DEFAULT_USERS = {
-    "admin": {
-        "password": "admin123",  # En producción, usar hash
+    "root": {
+        "password": "mfmssmcl",  # En producción, usar hash
         "role": "admin"
     },
     "operador": {
@@ -232,3 +232,126 @@ def show_login_form():
         """, unsafe_allow_html=True)
     
     return False
+
+# ==========================================
+# UI DE LOGIN GEMINI DARK - ESQUINA SUPERIOR DERECHA
+# ==========================================
+def show_top_right_login():
+    """Muestra botón de login en la esquina superior derecha con estilo Gemini Dark"""
+    init_session()
+    
+    # CSS para el contenedor del login en la esquina superior derecha
+    st.markdown("""
+    <style>
+        /* Contenedor del login en la esquina superior derecha */
+        .top-right-login {
+            position: fixed;
+            top: 10px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        /* Estilo del botón de login Gemini Dark */
+        .gemini-login-btn {
+            background: linear-gradient(135deg, #4285F4 0%, #9C27B0 50%, #E91E63 100%);
+            color: white !important;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(66, 133, 244, 0.4);
+        }
+        .gemini-login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(233, 30, 99, 0.5);
+        }
+        
+        /* Estilo para usuario logueado */
+        .user-info-badge {
+            background: rgba(30, 35, 48, 0.9);
+            border: 1px solid rgba(138, 180, 248, 0.3);
+            border-radius: 20px;
+            padding: 6px 15px;
+            color: #fff;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .user-role {
+            color: #8ab4f8;
+            font-size: 10px;
+            background: rgba(66, 133, 244, 0.2);
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        
+        /* Botón de cerrar sesión */
+        .logout-btn {
+            background: rgba(255, 85, 70, 0.2);
+            border: 1px solid rgba(255, 85, 70, 0.4);
+            color: #ffb4ab !important;
+            border-radius: 15px;
+            padding: 4px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .logout-btn:hover {
+            background: rgba(255, 85, 70, 0.3);
+        }
+        
+        /* Espaciado para el header */
+        .block-container {
+            padding-top: 1rem !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Crear contenedor en la esquina superior derecha
+    col1, col2, col3 = st.columns([6, 1, 1])
+    with col3:
+        if is_authenticated():
+            # Usuario logueado - mostrar info y botón de logout
+            username = get_username()
+            role = get_role()
+            
+            st.markdown(f"""
+            <div class="user-info-badge">
+                <span>👤 {username}</span>
+                <span class="user-role">{role.upper()}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("🚪", key="logout_top", help="Cerrar Sesión"):
+                logout()
+                st.rerun()
+        else:
+            # Usuario no logueado - mostrar botón de login
+            if st.button("🔐 Iniciar Sesión", key="login_top"):
+                # Guardar estado para mostrar formulario
+                st.session_state.show_login_form = True
+                st.rerun()
+    
+    # Si se solicitó mostrar el formulario de login
+    if st.session_state.get('show_login_form', False):
+        show_login_form()
+        if is_authenticated():
+            st.session_state.show_login_form = False
+
+# ==========================================
+# SIDEBAR DE NAVEGACIÓN (Menú de páginas)
+# ==========================================
+def show_sidebar_navigation():
+    """Muestra el menú de navegación en el sidebar"""
+    with st.sidebar:
+        st.markdown("--- ")
+        # El menú de navegación de Streamlit aparece automáticamente
+        # Aquí podemos agregar elementos adicionales si es necesario
+

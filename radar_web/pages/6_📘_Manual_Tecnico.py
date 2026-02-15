@@ -17,11 +17,15 @@ if not auth.is_authenticated():
 # ==========================================
 st.set_page_config(page_title="Manual Técnico - LCC AI Radar", page_icon="📘", layout="wide")
 
-with st.sidebar:
-    st.markdown(f"👤 **{auth.get_username()}** ({auth.get_role()})")
-    if st.button("🚪 Cerrar Sesión"):
-        auth.logout()
-        st.rerun()
+# ==========================================
+# 🔐 BOTÓN DE LOGIN - ESQUINA SUPERIOR DERECHA
+# ==========================================
+auth.show_top_right_login()
+
+# ==========================================
+# 📋 SIDEBAR DE NAVEGACIÓN
+# ==========================================
+auth.show_sidebar_navigation()
 
 # ==========================================
 # ✨ CSS MAESTRO: ESTILO GEMINI DARK + SIDEBAR

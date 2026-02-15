@@ -24,15 +24,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Sidebar auth
-with st.sidebar:
-    if auth.is_authenticated():
-        st.markdown(f"👤 **{auth.get_username()}**")
-        if st.button("🚪 Cerrar Sesión"):
-            auth.logout()
-            st.rerun()
-    else:
-        st.info("🔓 Sin iniciar sesión")
+# ==========================================
+# 🔐 BOTÓN DE LOGIN - ESQUINA SUPERIOR DERECHA
+# ==========================================
+auth.show_top_right_login()
+
+# ==========================================
+# 📋 SIDEBAR DE NAVEGACIÓN
+# ==========================================
+auth.show_sidebar_navigation()
 
 OFFSET_HORAS = 0
 
