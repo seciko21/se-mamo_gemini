@@ -2,34 +2,13 @@ import requests, time, os, urllib3, threading, subprocess, socket, sqlite3, json
 import numpy as np
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import *
+from gestor_radares import RADARES, guardar_radares, recargar_radares, cargar_radares, obtener_radares_thread_safe
+import threading
 
-# --- GESTIÓN DE RADARES EN JSON ---
-RADARES_FILE = "/mnt/darat/data/radares.json"
-
-def cargar_radares():
-    """Carga radares desde JSON o usa los de config.py"""
-    if os.path.exists(RADARES_FILE):
-        try:
-            with open(RADARES_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return dict(RADARES)
-
-def guardar_radares(radares):
-    """Guarda radares en JSON"""
-    try:
-        os.makedirs(os.path.dirname(RADARES_FILE), exist_ok=True)
-        with open(RADARES_FILE, 'w') as f:
-            json.dump(radares, f, indent=2)
-        return True
-    except Exception as e:
-        print(f"Error guardando radares: {e}")
-        return False
-
-# Cargar radares al inicio
-RADARES = cargar_radares()
+# Usar función thread-safe para cargar radares al inicio
+RADARES = recargar_radares()
 
 # Estados para el manejo de conversación
 ESTADOS_USUARIOS = {}
@@ -206,30 +185,65 @@ def validar_placa(texto_sucio):
     if 5 <= len(limpio) <= 8: return limpio
     return None
 
+_cache_disco = {"data": None, "tiempo": 0, "clips": 0}
+_cache_lock = threading.Lock()
+CACHE_DISCO_TTL = int(os.environ.get('CACHE_DISCO_TTL', 60))  # 60 segundos para cache de disco
+
 def obtener_mensaje_estado(ip_servidor):
-    try:
-        st = os.statvfs('/mnt/darat/')
-        libre = (st.f_bavail * st.f_frsize) / (1024**3)
-        total_disk = (st.f_blocks * st.f_frsize) / (1024**3)
-        porcentaje_usado = ((total_disk - libre) / total_disk) * 100
-        clips = 0
-        with os.scandir(VIDEO_PATH) as it:
-            for entry in it:
-                if entry.is_file() and entry.name.endswith('.mp4'): clips += 1
-        
-        barra = "▰" * int(porcentaje_usado / 10) + "▱" * (10 - int(porcentaje_usado / 10))
-        return f"💾 <b>DISCO:</b> {porcentaje_usado:.1f}% Usado\n<code>{barra}</code>\n└ {libre:.2f} GB Libres | {clips} Clips"
-    except: return "❌ Error disco"
+    global _cache_disco
+    with _cache_lock:
+        try:
+            ahora = time.time()
+            if _cache_disco["data"] and (ahora - _cache_disco["tiempo"]) < CACHE_DISCO_TTL:
+                return _cache_disco["data"]
+            
+            st = os.statvfs('/mnt/darat/')
+            libre = (st.f_bavail * st.f_frsize) / (1024**3)
+            total_disk = (st.f_blocks * st.f_frsize) / (1024**3)
+            porcentaje_usado = ((total_disk - libre) / total_disk) * 100
+            clips = 0
+            try:
+                with os.scandir(VIDEO_PATH) as it:
+                    for entry in it:
+                        if entry.is_file() and entry.name.endswith('.mp4'): clips += 1
+            except: pass
+            
+            barra = "▰" * int(porcentaje_usado / 10) + "▱" * (10 - int(porcentaje_usado / 10))
+            resultado = f"💾 <b>DISCO:</b> {porcentaje_usado:.1f}% Usado\n<code>{barra}</code>\n└ {libre:.2f} GB Libres | {clips} Clips"
+            _cache_disco = {"data": resultado, "tiempo": ahora, "clips": clips}
+            return resultado
+        except: return "❌ Error disco"
 
 def verificar_salud_red():
-    """Verifica conectividad a radares con timeout reducido"""
+    """Verifica conectividad a radares en paralelo con ThreadPoolExecutor"""
     rep = "🌐 <b>SALUD RED</b>\n━━━━━━━━━━━━\n"
-    for n, d in RADARES.items():
+    resultados = {}
+    
+    # Usar función thread-safe para obtener copia de radares
+    radares_copy = obtener_radares_thread_safe()
+    
+    def verificar_un_radar(nombre, ip, puerto):
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(0.3)  # Reducido de 0.5 a 0.3s
-            r = s.connect_ex((d['ip'], d['puerto'])); s.close()
-            rep += f"{'🟢' if r == 0 else '🔴'} {n}\n"
-        except: rep += f"❓ {n}\n"
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(0.3)
+            r = s.connect_ex((ip, puerto)); s.close()
+            return (nombre, '🟢' if r == 0 else '🔴')
+        except: return (nombre, '❓')
+    
+    # Usar ThreadPoolExecutor con límite de concurrencia (max 10 workers)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(verificar_un_radar, n, d['ip'], d['puerto']): n 
+                   for n, d in radares_copy.items()}
+        for future in as_completed(futures):
+            try:
+                nombre, estado = future.result()
+                resultados[nombre] = estado
+            except:
+                nombre = futures[future]
+                resultados[nombre] = '❓'
+    
+    # Ordenar resultados por nombre de radar
+    for n in sorted(radares_copy.keys()):
+        rep += f"{resultados.get(n, '❓')}\n{n}\n"
     return rep
 
 def depurar_disco_viejo():

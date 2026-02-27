@@ -6,6 +6,7 @@ import numpy as np
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from config import *
+from gestor_radares import RADARES, recargar_radares, inicializar_observador_radares, obtener_radares_thread_safe
 from ultralytics import YOLO
 
 # Silenciar warnings de PyTorch DataLoader (pin_memory sin GPU)
@@ -33,6 +34,41 @@ LOG_FILE = f"{VIDEO_PATH}velocidades.log"
 
 LAST_SEEN = {name: time.time() for name in RADARES} 
 RADAR_STATUS = {name: True for name in RADARES} 
+
+def actualizar_diccionarios_radares():
+    """
+    Actualiza LAST_SEEN y RADAR_STATUS cuando los radares cambian.
+    Añade nuevos radares y marca los eliminados como inactivos.
+    """
+    global LAST_SEEN, RADAR_STATUS
+    
+    try:
+        # Obtener copia thread-safe de radares
+        radares_copy = obtener_radares_thread_safe()
+        
+        # Nuevos radares que no están en los diccionarios
+        for nombre in radares_copy:
+            if nombre not in LAST_SEEN:
+                LAST_SEEN[nombre] = time.time()
+                RADAR_STATUS[nombre] = True
+                print(f"➕ Radar añadido: {nombre}")
+        
+        # Radares eliminados (quedan en los diccionarios pero inactivos)
+        for nombre in list(RADAR_STATUS.keys()):
+            if nombre not in radares_copy:
+                RADAR_STATUS[nombre] = False
+                print(f"➖ Radar eliminado: {nombre}")
+    except Exception as e:
+        print(f"Error actualizando diccionarios de radares: {e}")
+
+# Inicializar observador de cambios de radares
+def callback_cambio_radares():
+    """Callback llamado cuando el archivo radares.json cambia"""
+    actualizar_diccionarios_radares()
+    print("🔄 Diccionarios de radares actualizados")
+
+# Iniciar el observador de archivos
+inicializar_observador_radares(callback_cambio_radares)
 
 for ruta in [FOTOS_PATH, VIDEO_PATH, f"{BASE_DIR}/data", BUFFER_DIR]:
     os.makedirs(ruta, exist_ok=True)

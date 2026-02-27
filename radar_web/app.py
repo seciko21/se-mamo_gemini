@@ -54,6 +54,13 @@ auth.show_top_right_login()
 # ==========================================
 auth.show_sidebar_navigation()
 
+# Importar módulo de radares
+try:
+    from gestor_radares import obtener_radares, obtener_lista_radares
+    RADARES_CONFIG = obtener_radares()
+except:
+    RADARES_CONFIG = {}
+
 # RUTAS (Prioridad Docker)
 DB_PATH = '/app/data_folder/cola_mensajes.db'
 if not os.path.exists(DB_PATH): DB_PATH = 'cola_mensajes.db'
@@ -270,6 +277,28 @@ if not df_raw.empty:
     graves = len(df[df['velocidad'] >= 60])
     draw_kpi(k3, "Infracciones", f"{graves}", "Alertas de Prioridad", "🚨", alert=True)
     draw_kpi(k4, "Récord Vel.", f"{df['velocidad'].max()}", "Km/h Máximo registrado", "🏆")
+
+    # ==========================================
+    # 📡 RADARES CONFIGURADOS (Sincronizado con Bot)
+    # ==========================================
+    if RADARES_CONFIG:
+        st.markdown('<div class="gemini-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-header">📡 Radares Configurados (Control Centralizado)</div>', unsafe_allow_html=True)
+        
+        # Mostrar radares en columnas
+        cols = st.columns(min(len(RADARES_CONFIG), 4))
+        for i, (nombre, datos) in enumerate(RADARES_CONFIG.items()):
+            with cols[i % 4]:
+                st.markdown(f"""
+                    <div style="background: rgba(66, 133, 244, 0.1); padding: 15px; border-radius: 12px; margin: 5px 0;">
+                        <div style="color: #8ab4f8; font-weight: bold; font-size: 16px;">📍 {nombre}</div>
+                        <div style="color: #9aa0a6; font-size: 12px;">IP: {datos.get('ip', 'N/A')}</div>
+                        <div style="color: #9aa0a6; font-size: 12px;">Puerto: {datos.get('puerto', 'N/A')}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("⚠️ No hay radares configurados. Usa el bot de Telegram para agregar radares.")
 
     # ==========================================
     # 📈 NIVEL 2: PANEL PRO (GRADIENTES GEMINI)
