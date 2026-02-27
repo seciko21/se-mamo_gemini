@@ -4,7 +4,7 @@ import logging
 import warnings
 import numpy as np
 from requests.auth import HTTPDigestAuth
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import *
 from gestor_radares import RADARES, recargar_radares, inicializar_observador_radares, obtener_radares_thread_safe
 from ultralytics import YOLO
@@ -154,9 +154,74 @@ def procesar_cola_reintentos():
         except: pass
         time.sleep(60)
 
+# ==========================================
+# CONFIGURACIÓN DE LIMPIEZA (Días de retención)
+# ==========================================
+DIAS_RETENCION_HISTORIAL = 30  # Eliminar historial mayor a 30 días
+DIAS_RETENCION_VIDEOS = 7      # Eliminar videos mayores a 7 días
+LIMPIEZA_DISCO_PORCENTAJE = 85 # Iniciar limpieza al 85% de disco
+LIMPIEZA_DISCO_EMERGENCIA = 95 # Limpieza agresiva al 95%
+
+def limpiar_almacenamiento_proactivo():
+    """
+    Limpieza proactiva de almacenamiento:
+    - Historial de base de datos
+    - Videos antiguos
+    - Vacuum de SQLite
+    """
+    try:
+        
+        fecha_limite_historial = (datetime.now() - timedelta(days=DIAS_RETENCION_HISTORIAL)).strftime('%Y-%m-%d')
+        fecha_limite_video = datetime.now().timestamp() - (DIAS_RETENCION_VIDEOS * 86400)
+        
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        
+        # 1. Limpiar historial antiguo
+        c.execute("DELETE FROM historial WHERE fecha < ?", (fecha_limite_historial,))
+        deleted_historial = c.rowcount
+        
+        # 2. Limpiar cola antigua (mayor a 7 días)
+        fecha_limite_cola = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        c.execute("DELETE FROM cola WHERE fecha < ?", (fecha_limite_cola,))
+        deleted_cola = c.rowcount
+        
+        # 3. Vacuum de la base de datos (ocasionalmente)
+        if deleted_historial > 0 or deleted_cola > 0:
+            conn.execute("VACUUM")
+        
+        conn.commit()
+        conn.close()
+        
+        # 4. Limpiar videos antiguos
+        video_extensions = ('.mp4', '.avi', '.mov', '.mkv')
+        videos_eliminados = 0
+        if os.path.exists(VIDEO_PATH):
+            for f in os.listdir(VIDEO_PATH):
+                if f.endswith(video_extensions):
+                    filepath = os.path.join(VIDEO_PATH, f)
+                    if os.path.getmtime(filepath) < fecha_limite_video:
+                        try:
+                            os.remove(filepath)
+                            videos_eliminados += 1
+                        except: pass
+        
+        # Log de limpieza
+        if deleted_historial > 0 or deleted_cola > 0 or videos_eliminados > 0:
+            print(f"🧹 [LIMPIEZA] Historial: {deleted_historial}, Cola: {deleted_cola}, Videos: {videos_eliminados}")
+            
+    except Exception as e:
+        print(f"⚠️ [LIMPIEZA] Error: {e}")
+
 def motor_mantenimiento():
+    """Motor de mantenimiento que corre en background"""
+    limpieza_intervalo = 3600 * 6  # Cada 6 horas
+    ultimo_check = 0
+    
     while True:
         ahora = time.time()
+        
+        # Monitorear estado de radares
         for nombre, last_time in LAST_SEEN.items():
             diff = ahora - last_time
             if diff > 3600 and RADAR_STATUS[nombre]:
@@ -165,12 +230,51 @@ def motor_mantenimiento():
             elif diff < 60 and not RADAR_STATUS[nombre]:
                 RADAR_STATUS[nombre] = True
                 enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": f"✅ <b>ONLINE:</b> {nombre}", "parse_mode": "HTML"})
+        
         try:
             st = os.statvfs(BASE_DIR)
-            if ((st.f_blocks - st.f_bavail) / st.f_blocks) * 100 > 90:
-                archivos = sorted([os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH)], key=os.path.getmtime)
-                for i in range(min(20, len(archivos))): os.remove(archivos[i])
-        except: pass
+            disco_usado_pct = ((st.f_blocks - st.f_bavail) / st.f_blocks) * 100
+            
+            # Limpieza proactiva basada en porcentaje
+            if disco_usado_pct > LIMPIEZA_DISCO_EMERGENCIA:
+                # Limpieza agresiva de emergencia
+                print(f"⚠️ [LIMPIEZA] Disco al {disco_usado_pct:.1f}% - MODO EMERGENCIA")
+                if os.path.exists(VIDEO_PATH):
+                    video_extensions = ('.mp4', '.avi', '.mov', '.mkv')
+                    archivos = sorted(
+                        [os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH) 
+                         if f.endswith(video_extensions)],
+                        key=os.path.getmtime
+                    )
+                    for i in range(min(50, len(archivos))): 
+                        try: os.remove(archivos[i])
+                        except: pass
+                # También limpiar BD
+                limpiar_almacenamiento_proactivo()
+                
+            elif disco_usado_pct > LIMPIEZA_DISCO_PORCENTAJE:
+                # Limpieza proactiva
+                print(f"ℹ️ [LIMPIEZA] Disco al {disco_usado_pct:.1f}% - Limpiando...")
+                if os.path.exists(VIDEO_PATH):
+                    video_extensions = ('.mp4', '.avi', '.mov', '.mkv')
+                    archivos = sorted(
+                        [os.path.join(VIDEO_PATH, f) for f in os.listdir(VIDEO_PATH) 
+                         if f.endswith(video_extensions)],
+                        key=os.path.getmtime
+                    )
+                    for i in range(min(20, len(archivos))): 
+                        try: os.remove(archivos[i])
+                        except: pass
+            
+            # Limpieza programada cada 6 horas
+            if ahora - ultimo_check > limpieza_intervalo:
+                print(f"ℹ️ [LIMPIEZA] Ejecución de limpieza programada...")
+                limpiar_almacenamiento_proactivo()
+                ultimo_check = ahora
+                
+        except Exception as e:
+            print(f"⚠️ [MOTOR] Error en mantenimiento: {e}")
+            
         time.sleep(300)
 
 # ==========================================
