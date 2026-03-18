@@ -48,3 +48,6 @@ services:
       - /mnt/darat/data:/app/data_folder
       - /mnt/darat/clips:/app/clips:ro
       - /mnt/darat/multas_fotos:/app/imagenes_multas
+      - ./radar_web/pages:/app/pages
+      - ./radar_web/.streamlit:/app/.streamlit:ro
+      - /mnt/darat:/mnt/darat

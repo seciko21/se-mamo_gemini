@@ -279,9 +279,9 @@ with col_save2:
         defaults = {
             'ROMANZA': 40,
             'RC50': 30,
-            'RC21': 50,
+            'RC21': 30,
             'FINESTRE': 50,
-            'BAHIAS': 50,
+            'BAHIAS': 40,
             'NUEVO_RADAR': 50,
             'SIMULACION_TEST': 50
         }
