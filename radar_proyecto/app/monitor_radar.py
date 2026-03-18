@@ -9,6 +9,46 @@ from config import *
 from gestor_radares import RADARES, recargar_radares, inicializar_observador_radares, obtener_radares_thread_safe
 from ultralytics import YOLO
 
+# ==========================================
+# 0. FUNCIÓN PARA OBTENER UMBRALES DE LA BASE DE DATOS
+# ==========================================
+def get_umbral_radar(radar_nombre, default=55):
+    """Obtiene el umbral de velocidad para un radar específico desde la base de datos"""
+    try:
+        DB_PATH = "/mnt/darat/data/cola_mensajes.db"
+        if not os.path.exists(DB_PATH):
+            return default
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT umbral_velocidad FROM alertas_config WHERE radar_nombre = ?", (radar_nombre,))
+        resultado = cursor.fetchone()
+        conn.close()
+        if resultado:
+            return int(resultado[0])
+        return default
+    except Exception as e:
+        print(f"Error al obtener umbral de {radar_nombre}: {e}")
+        return default
+
+# Caché de umbrales (se actualiza cada 60 segundos)
+_ultima_actualizacion_umbrales = 0
+_umbrales_cache = {}
+
+def get_umbral_cached(radar_nombre):
+    """Obtiene el umbral con caché de 60 segundos"""
+    global _ultima_actualizacion_umbrales, _umbrales_cache
+    import time
+    
+    ahora = time.time()
+    if ahora - _ultima_actualizacion_umbrales > 60:  # Actualizar cada 60 segundos
+        _ultima_actualizacion_umbrales = ahora
+        _umbrales_cache = {}
+    
+    if radar_nombre not in _umbrales_cache:
+        _umbrales_cache[radar_nombre] = get_umbral_radar(radar_nombre)
+    
+    return _umbrales_cache[radar_nombre]
+
 # Silenciar warnings de PyTorch DataLoader (pin_memory sin GPU)
 warnings.filterwarnings('ignore', message=".*pin_memory.*argument.*set.*true.*no accelerator.*")
 
@@ -428,15 +468,21 @@ def procesar_imagen_csi(ruta_foto, speed):
 def procesar_deteccion(radar_name, ip, speed):
     ahora_dt = datetime.now()
     hora_s = ahora_dt.strftime('%H:%M:%S')
-    LAST_SEEN[radar_name] = time.time() 
+    LAST_SEEN[radar_name] = time.time()
     
-    if speed <= 54:
+    # Obtener umbral dinámico para este radar
+    umbral = get_umbral_cached(radar_name)
+    umbral_grave = umbral + 10  # 10 km/h por encima del umbral para grave
+    
+    if speed < umbral:
+        # Velocidad por debajo del umbral - solo registrar
         registrar_historial(radar_name, speed, None, "OMITIDO")
         cap = f"✅ <b>PREVENTIVO</b>\n📍 Radar: <b>{radar_name}</b>\n⚡ Velocidad: <b>{speed} km/h</b>\n⏰ {hora_s}"
         enviar_seguro("sendMessage", {"chat_id": CHAT_ID, "text": cap, "parse_mode": "HTML"})
         return 
 
-    cat, emo = ("GRAVE", "🔴") if speed >= 60 else ("ALERTA", "🟡")
+    # Clasificar según velocidad
+    cat, emo = ("GRAVE", "🔴") if speed >= umbral_grave else ("ALERTA", "🟡")
     archivo_foto, placa, vehiculo = None, "Analizando...", "🚗 Analizando..."
 
     try:
@@ -455,8 +501,8 @@ def procesar_deteccion(radar_name, ip, speed):
         with open(os.path.join(FOTOS_PATH, archivo_foto), 'rb') as f:
             enviar_seguro("sendPhoto", {'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, files={'photo': f})
         
-        # ENVÍO DE VIDEO DE EVIDENCIA COMPLETA (45s)
-        if speed >= 60:
+        # ENVÍO DE VIDEO DE EVIDENCIA COMPLETA (45s) - usar umbral grave dinámico
+        if speed >= umbral_grave:
             threading.Thread(target=enviar_video_completo, args=(radar_name, ip, speed, cap)).start()
 
 def escuchar_radar(nombre, ip, puerto):
