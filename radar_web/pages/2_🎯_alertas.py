@@ -98,15 +98,51 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 🧠 MOTOR DE DATOS (Filtrado Alertas > 55 km/h)
+# 🧠 MOTOR DE DATOS (Con configuración de alertas por radar)
 # ==========================================
+
+def get_umbral_radar(radar_nombre, default=55):
+    """Obtiene el umbral de velocidad para un radar específico"""
+    try:
+        if not os.path.exists(DB_PATH): return default
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query(f"SELECT umbral_velocidad FROM alertas_config WHERE radar_nombre = '{radar_nombre}'", conn)
+        conn.close()
+        if not df.empty:
+            return int(df.iloc[0]['umbral_velocidad'])
+        return default
+    except: return default
+
 @st.cache_data(ttl=10)
 def get_alert_data():
     try:
         if not os.path.exists(DB_PATH): return pd.DataFrame()
         conn = sqlite3.connect(DB_PATH)
-        # Filtramos solo alertas mayores a 55 km/h
-        df = pd.read_sql_query("SELECT * FROM historial WHERE velocidad > 55 ORDER BY id DESC LIMIT 500", conn)
+        # Obtener todos los radares y sus umbrales
+        umbrales_df = pd.read_sql_query("SELECT radar_nombre, umbral_velocidad FROM alertas_config", conn)
+        
+        if umbrales_df.empty:
+            # Si no hay configuración, usar 55 km/h por defecto
+            df = pd.read_sql_query("SELECT * FROM historial WHERE velocidad > 55 ORDER BY id DESC LIMIT 500", conn)
+        else:
+            # Construir consulta con múltiples umbrales
+            query = "SELECT * FROM historial ORDER BY id DESC LIMIT 500"
+            df = pd.read_sql_query(query, conn)
+            
+            # Filtrar según el umbral de cada radar
+            df_filtrado = []
+            for _, row in umbrales_df.iterrows():
+                radar = row['radar_nombre']
+                umbral = row['umbral_velocidad']
+                df_radar = df[df['radar'] == radar]
+                df_filtrado.append(df_radar[df_radar['velocidad'] > umbral])
+            
+            if df_filtrado:
+                df = pd.concat(df_filtrado, ignore_index=True)
+                df = df.sort_values('id', ascending=False).head(500)
+            else:
+                df = pd.DataFrame()
+        
         conn.close()
         
         if df.empty: return df
@@ -139,7 +175,18 @@ if not df_raw.empty:
     # KPIs de Alertas
     k1, k2, k3 = st.columns(3)
     k1.metric("Alertas Totales", len(df))
-    k1.markdown('<div class="kpi-sub">Eventos > 50 km/h</div>', unsafe_allow_html=True)
+    
+    # Mostrar umbral dinámico basado en la configuración
+    umbral_promedio = 55
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        umb_df = pd.read_sql_query("SELECT AVG(umbral_velocidad) as promedio FROM alertas_config", conn)
+        conn.close()
+        if not umb_df.empty and umb_df.iloc[0]['promedio'] is not None:
+            umbral_promedio = int(umb_df.iloc[0]['promedio'])
+    except: pass
+    
+    k1.markdown(f'<div class="kpi-sub">Eventos > {umbral_promedio} km/h</div>', unsafe_allow_html=True)
     
     k2.metric("Velocidad Máxima", f"{df['velocidad'].max()} km/h")
     k3.metric("Radar Crítico", df['radar'].mode()[0] if not df.empty else "N/A")
