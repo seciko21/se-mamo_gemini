@@ -505,6 +505,28 @@ def procesar_deteccion(radar_name, ip, speed):
         if speed >= umbral_grave:
             threading.Thread(target=enviar_video_completo, args=(radar_name, ip, speed, cap)).start()
 
+def enviar_comando_inicial(sock, nombre_radar):
+    """Enviar comandos de inicialización específicos por radar.
+    Algunos radares (RC50, RC21) requieren comandos para iniciar transmisión."""
+    comandos = {
+        'RC50': [
+            b'\xfc\xfa\x01\x00',  # Iniciar transmisión
+            b'\xfc\xfa\x02\x00',  # Habilitar salida de velocidad
+            b'\xfc\xfa\x10\x00',  # Habilitar clasificación
+        ],
+        'RC21': [
+            b'\xfc\xfa\x01\x00',
+        ]
+    }
+    if nombre_radar in comandos:
+        for cmd in comandos[nombre_radar]:
+            try:
+                sock.sendall(cmd)
+                time.sleep(0.3)
+                print(f"   📤 Comando inicial a {nombre_radar}: 0x{cmd.hex().upper()}")
+            except Exception as e:
+                print(f"   ⚠️  Error enviando comando: {e}")
+
 def escuchar_radar(nombre, ip, puerto):
     print(f"👂 Monitor activo: {nombre} ({ip}:{puerto})")
     data_buffer = b""  # Buffer para datos fragmentados (bytes, no str)
@@ -515,6 +537,8 @@ def escuchar_radar(nombre, ip, puerto):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(15)
                 s.connect((ip, puerto))
+                # Enviar comandos de inicialización para radares que lo requieren
+                enviar_comando_inicial(s, nombre)
                 print(f"✅ [SOCKET] Conectado a {nombre}")
                 data_buffer = b""  # Limpiar buffer al reconectar
                 packet_count = 0
@@ -536,12 +560,16 @@ def escuchar_radar(nombre, ip, puerto):
                             data_buffer = data_buffer[4:]
                             packet_count += 1
                             
-                            # Procesar paquete de 4 bytes - IGUAL A radar_tcp_reader.py
+                             # Procesar paquete de 4 bytes - IGUAL A radar_tcp_reader.py
                             v = 0
                             try:
                                 # packet ya es bytes, convertir headers a bytes para comparación
                                 header_in = b'\xfc\xfa'
                                 header_out = b'\xfb\xfd'
+                                
+                                # DEBUG: Log ALL RC50 raw packets
+                                if nombre == 'RC50' and packet_count <= 50:
+                                    print(f"   🔍 RC50 RAW #{packet_count}: 0x{packet.hex().upper()} | speed={packet[2]} | header=0x{packet[:2].hex().upper()}")
                                 
                                 # Buscar patrón fcfa (ENTRADA)
                                 if packet[:2] == header_in:
@@ -556,9 +584,14 @@ def escuchar_radar(nombre, ip, puerto):
                                 print(f"📡 [{nombre}] Velocidad detectada: {v} km/h (packet #{packet_count})")
                                 threading.Thread(target=procesar_deteccion, args=(nombre, ip, v)).start()
                             
-                            # Loggear si hay datos residuales
+                             # Loggear si hay datos residuales
                             if len(data_buffer) > 0 and len(data_buffer) < 4:
                                 print(f"💾 [{nombre}] Buffer parcial: {len(data_buffer)} bytes acumulados")
+                            
+                            # DEBUG: Detectar keepalives para RC50
+                            if nombre == 'RC50' and packet_count <= 50 and v == 0:
+                                if packet[:2] == b'\xfb\xfd':
+                                    print(f"   🥶 RC50 KEEPALIVE: 0x{packet.hex().upper()} (sin velocidad real)")
                                 
                     except socket.timeout:
                         continue  # Reintentar recv
